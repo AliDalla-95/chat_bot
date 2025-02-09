@@ -26,7 +26,7 @@ def start(message):
 def register(message):
     """ ali """
     bot.send_message(message.chat.id,
-                     "Please enter your email, full name, and YouTube username (comma-separated):")
+                     "Please enter your id, email, full name, and YouTube username (comma-separated):")
     bot.register_next_step_handler(message, save_registration)
 
 def save_registration(message):
