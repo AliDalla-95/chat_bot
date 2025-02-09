@@ -5,8 +5,8 @@ import sqlite3
 # Third-Party Imports
 import telebot
 
-#from telebot.types import InputMediaPhoto
-
+from telebot import types
+from telebot.types import InputMediaPhoto
 # First-Party Imports (Local modules)
 import image_processing
 
@@ -15,7 +15,46 @@ import config
 
 bot = telebot.TeleBot(config.TOKEN)
 
+# Define a list of commands with descriptions
+commands = [
+    types.BotCommand("start", "Start interacting with the bot"),
+    types.BotCommand("register", "Register your account"),
+    types.BotCommand("requests", "Show YouTube links"),
+    types.BotCommand("help", "Get help with commands"),
+    types.BotCommand("profile", "Show Your profile"),
+    # Add more commands as needed...
+]
+
+# Register the commands with Telegram
+bot.set_my_commands(commands)
 # Command to start bot
+
+
+# @bot.message_handler(commands=['menu'])
+# def show_menu(message):
+#     # Create a custom keyboard
+#     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    
+#     # Create buttons for your commands
+#     btn_start = types.KeyboardButton("/start")
+#     btn_register = types.KeyboardButton("/register")
+#     btn_requests = types.KeyboardButton("/requests")
+#     btn_help = types.KeyboardButton("/help")
+#     btn_profile = types.KeyboardButton("/profile")
+    
+#     # Add the buttons to the keyboard layout
+#     markup.add(btn_start, btn_register, btn_requests, btn_help, btn_profile)
+    
+#     # Send a message with the custom keyboard
+#     bot.send_message(message.chat.id, "Choose a command:", reply_markup=markup)
+
+# # Optionally, you can also remove the keyboard later if needed:
+# @bot.message_handler(commands=['hide'])
+# def hide_menu(message):
+    # hide_markup = types.ReplyKeyboardRemove()
+    # bot.send_message(message.chat.id, "Keyboard hidden", reply_markup=hide_markup)
+
+
 @bot.message_handler(commands=['start'])
 def start(message):
     """ ali """
@@ -97,12 +136,16 @@ def save_link(message):
 @bot.message_handler(commands=['requests'])
 def show_links(message):
     """ ali """
-    links = database.get_links()
-    if not links:
-        bot.reply_to(message, "No links available.")
+    profile = get_profile(message.from_user.id)
+    if profile:
+        links = database.get_links()
+        if not links:
+            bot.reply_to(message, "No links available.")
+        else:
+            for link, desc in links:
+                bot.send_message(message.chat.id, f"🔗 {link}\n📌 {desc}")
     else:
-        for link, desc in links:
-            bot.send_message(message.chat.id, f"🔗 {link}\n📌 {desc}")
+        bot.reply_to(message, "Please register using /register.")
 
 # Handle image uploads
 @bot.message_handler(content_types=['photo'])
@@ -128,6 +171,52 @@ def save_image(message, file_id):
         bot.reply_to(message, "✅ Image verified! You earned a point.")
     else:
         bot.reply_to(message, "❌ Image does not meet criteria.")
+
+def get_profile(telegram_id):
+    """Retrieves a user’s profile data from the profiles table."""
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT telegram_id, username, full_name, email, points FROM users WHERE telegram_id = ?",
+            (telegram_id,)
+        )
+        return cursor.fetchone()
+
+
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    """Displays a list of available commands and their descriptions."""
+    help_text = (
+        "Here are the available commands:\n"
+        "/start - Begin interaction or re-check registration\n"
+        "/profile - View your profile information\n"
+        "/help - Show this help message\n"
+        "/register - Show this registration\n"
+        "/requests - Show this links\n"
+        # Add any additional commands here
+    )
+    bot.reply_to(message, help_text)
+
+@bot.message_handler(commands=['profile'])
+def profile_command(message):
+    """Displays the user's profile information."""
+    profile = get_profile(message.from_user.id)
+    if profile:
+        telegram_id, username, full_name, email, points = profile
+        profile_text = (
+            f"Profile Information:\n"
+            f"Telegram ID: {telegram_id}\n"
+            f"Username: {username}\n"
+            f"Full Name: {full_name}\n"
+            f"Email: {email}\n"
+            f"Points: {points}"
+        )
+        bot.reply_to(message, profile_text)
+    else:
+        bot.reply_to(message, "Profile not found. Please register using /register.")
+
+
+
 
 # Run bot
 bot.polling()
