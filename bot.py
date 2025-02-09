@@ -15,21 +15,6 @@ import config
 
 bot = telebot.TeleBot(config.TOKEN)
 
-# Define a list of commands with descriptions
-commands = [
-    types.BotCommand("start", "Start interacting with the bot"),
-    types.BotCommand("register", "Register your account"),
-    types.BotCommand("requests", "Show YouTube links"),
-    types.BotCommand("help", "Get help with commands"),
-    types.BotCommand("profile", "Show Your profile"),
-    # Add more commands as needed...
-]
-
-# Register the commands with Telegram
-bot.set_my_commands(commands)
-# Command to start bot
-
-
 # @bot.message_handler(commands=['menu'])
 # def show_menu(message):
 #     # Create a custom keyboard
@@ -58,8 +43,33 @@ bot.set_my_commands(commands)
 @bot.message_handler(commands=['start'])
 def start(message):
     """ ali """
-    bot.reply_to(message, "Welcome to the YouTube Points Bot! Use /register to start.")
-
+    if user_exists(message.from_user.id):    
+        if message.from_user.id in config.ADMIN_IDS:
+            # Define commands for admins
+            admin_commands = [
+                    types.BotCommand("start", "Start interacting with the bot"),
+                    types.BotCommand("register", "Register your account"),
+                    types.BotCommand("requests", "Show YouTube links"),
+                    types.BotCommand("help", "Get help with commands"),
+                    types.BotCommand("profile", "Show Your profile"),
+                    types.BotCommand("addlink", "addlink and descriptions"),           
+            ]
+            bot.set_my_commands(admin_commands, scope=types.BotCommandScopeChat(message.chat.id))
+            bot.reply_to(message, "Welcome, Admin! Use /menu to see all commands.")
+        else:
+        # Define commands for non-admin users
+            user_commands = [
+                types.BotCommand("start", "Start interacting with the bot"),
+                types.BotCommand("register", "Register your account"),
+                types.BotCommand("requests", "Show YouTube links"),
+                types.BotCommand("help", "Get help with commands"),
+                types.BotCommand("profile", "Show Your profile"),
+            ]
+            bot.set_my_commands(user_commands, scope=types.BotCommandScopeChat(message.chat.id))
+            bot.reply_to(message, "Welcome! Use /menu to see available commands.")
+    else:
+        bot.reply_to(message, "Welcome to the YouTube Points Bot! Use /register to start.")
+    
 # Register users
 @bot.message_handler(commands=['register'])
 def register(message):
@@ -108,29 +118,9 @@ def save_registration(message):
         email, full_name, username = map(str.strip, user_data)
         database.add_user(message.from_user.id, username, full_name, email)
         bot.reply_to(message, "Registration successful!")
-    except Exception as e:
-        bot.reply_to(message, f"An error occurred: {e}")
     except:
-        bot.reply_to(message, "Invalid format! Use:email,full name,YouTube username")
-# Admin adding YouTube links
-@bot.message_handler(commands=['addlink'])
-def add_link(message):
-    """ ali """
-    if message.from_user.id in config.ADMIN_IDS:
-        bot.send_message(message.chat.id, "Enter YouTube link and description (comma-separated):")
-        bot.register_next_step_handler(message, save_link)
-    else:
-        bot.reply_to(message, "You are not authorized to add links.")
-
-def save_link(message):
-    """ ali """
-    try:
-        link, desc = map(str.strip, message.text.split(","))
-        database.add_link(link, desc, message.from_user.id)
-        bot.reply_to(message, "Link added successfully!")
-    except:
-        bot.reply_to(message, "Invalid format! Use: link, description")
-
+        bot.reply_to(message, "Invalid format! Use:email,full name,YouTube username /register")
+                
 # Show available YouTube links
 @bot.message_handler(commands=['requests'])
 def show_links(message):
@@ -213,6 +203,71 @@ def profile_command(message):
         bot.reply_to(message, profile_text)
     else:
         bot.reply_to(message, "Profile not found. Please register using /register.")
+
+
+def add_link_to_db(link, description, admin_id):
+    """Inserts a new link with description into the links table."""
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO links (youtube_link, description, added_by)
+            VALUES (?, ?, ?)
+        """, (link, description, admin_id))
+        conn.commit()
+
+@bot.message_handler(commands=['addlink'])
+def add_link_command(message):
+    """
+    This command lets an admin add a new link.
+    It first checks if the user is authorized, then asks for link and description.
+    """
+    # Check if the sender is an admin
+    if message.from_user.id not in config.ADMIN_IDS:
+        bot.reply_to(message, "Sorry, you are not authorized to use this command.")
+        return
+
+    # Ask the admin for the link and description in a single message
+    bot.reply_to(message, "Please send the link and description separated by a comma:\n\nlink, description")
+    # The next message will be processed by the next handler function
+    bot.register_next_step_handler(message, process_add_link)
+
+def process_add_link(message):
+    """Processes the admin's reply to add the link and description."""
+    try:
+        # Split the input. Using maxsplit=1 allows the description to contain commas.
+        parts = message.text.split(",", 1)
+        if len(parts) != 2:
+            raise ValueError("Invalid format. Please ensure you separate the link and description with a comma.")
+        
+        # Remove extra spaces
+        link = parts[0].strip()
+        description = parts[1].strip()
+
+        # Insert the link into the database
+        add_link_to_db(link, description, message.from_user.id)
+        bot.reply_to(message, "Link added successfully!")
+    except Exception as e:
+        bot.reply_to(message, f"Error adding link. Ensure the format is correct: link, description. ({e})")
+
+
+# # Admin adding YouTube links
+# @bot.message_handler(commands=['addlink'])
+# def add_link(message):
+#     """ ali """
+#     if message.from_user.id in config.ADMIN_IDS:
+#         bot.send_message(message.chat.id, "Enter YouTube link and description (comma-separated):")
+#         bot.register_next_step_handler(message, save_link)
+#     else:
+#         bot.reply_to(message, "You are not authorized to add links.")
+
+# def save_link(message):
+#     """ ali """
+#     try:
+#         link, desc = map(str.strip, message.text.split(","))
+#         database.add_link(link, desc, message.from_user.id)
+#         bot.reply_to(message, "Link added successfully!")
+#     except:
+#         bot.reply_to(message, "Invalid format! Use: link, description")
 
 
 
