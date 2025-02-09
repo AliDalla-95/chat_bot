@@ -102,7 +102,6 @@ def save_registration(message):
     # else:
     #     print("Invalid Telegram ID!")
     try:
-        bot.reply_to(message, "Please send your registration info in the following format:\nemail,full name,YouTube username")
         # Here, you can set up a handler to capture the next message for registration info.
         # For example:
         user_data = message.text.split(",")
