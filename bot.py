@@ -1,7 +1,7 @@
 """ ali """
 # Standard Library Imports
 import os
-
+import sqlite3
 # Third-Party Imports
 import telebot
 
@@ -25,19 +25,55 @@ def start(message):
 @bot.message_handler(commands=['register'])
 def register(message):
     """ ali """
-    bot.send_message(message.chat.id,
-                     "Please enter your id, email, full name, and YouTube username (comma-separated):")
-    bot.register_next_step_handler(message, save_registration)
+    try:
+        if user_exists(message.from_user.id):
+            bot.reply_to(message, "You are already registered!")
+        else:
+            bot.send_message(message.chat.id,
+                            "Please enter your email,full name,YouTube username(comma-separated):")
+            bot.register_next_step_handler(message, save_registration)
+    except Exception as e:
+        bot.reply_to(message, f"An error occurred: {e}")
+            
+def connect_db():
+    """Returns a connection to the SQLite database."""
+    return sqlite3.connect('database.db')  # Adjust the path as needed
+
+def user_exists(telegram_id):
+    """Check if the user already exists in the database."""
+    try:
+        with connect_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
+            user = cursor.fetchone()  # If a row is returned, the user exists
+            return user is not None
+    except sqlite3.Error as e:
+        print(f"SQLite error occurred: {e}")
+        return False
 
 def save_registration(message):
-    """ ali """
+    
+    """Checks registration status and prompts for registration if needed."""
+    # Debugging output: print the split result
+    # print(f"User Data Split: {user_data}")  # Debugging line
+    # Debugging output: print the stripped values
+    # print(f"id: {message.from_user.id}, Email: {email}, Full Name: {full_name}, Username: {username}")  # Debugging line
+    # if isinstance(email, str):
+    #     print(f"Valid Telegram ID: {email}")
+    # else:
+    #     print("Invalid Telegram ID!")
     try:
-        email, full_name, username = map(str.strip, message.text.split(","))
+        bot.reply_to(message, "Please send your registration info in the following format:\nemail,full name,YouTube username")
+        # Here, you can set up a handler to capture the next message for registration info.
+        # For example:
+        user_data = message.text.split(",")
+        email, full_name, username = map(str.strip, user_data)
         database.add_user(message.from_user.id, username, full_name, email)
         bot.reply_to(message, "Registration successful!")
+    except Exception as e:
+        bot.reply_to(message, f"An error occurred: {e}")
     except:
-        bot.reply_to(message, "Invalid format! Use: email, full name, YouTube username")
-
+        bot.reply_to(message, "Invalid format! Use:email,full name,YouTube username")
 # Admin adding YouTube links
 @bot.message_handler(commands=['addlink'])
 def add_link(message):

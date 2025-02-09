@@ -11,7 +11,7 @@ def setup_database():
     """ ali """
     with connect_db() as conn:
         cursor = conn.cursor()
-        cursor.executescript("""
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 telegram_id INTEGER UNIQUE,
@@ -40,12 +40,17 @@ def setup_database():
 
 def add_user(telegram_id, username, full_name, email):
     """ ali """
-    with connect_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO users (telegram_id, username, full_name, email) VALUES (?, ?, ?, ?)", 
-                       (telegram_id, username, full_name, email))
-        conn.commit()
+    try:
+        with connect_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO users (telegram_id, username, full_name, email) VALUES (?, ?, ?, ?)", 
+                        (telegram_id, username, full_name, email))
+            conn.commit()
+    except sqlite3.Error as e:
+        # Catch any SQLite errors and print them
+        print(f"SQLite error occurred: {e}")
+
 
 def add_link(youtube_link, description, admin_id):
     """ ali """
