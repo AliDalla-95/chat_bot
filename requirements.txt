@@ -1,0 +1,5 @@
+pip install python-telegram-bot    # Telegram API wrapper
+pip install sqlalchemy           # Database ORM
+pip install pytesseract          # OCR for text recognition in images
+pip install pillow              # Image processing
+pip install requests             # HTTP requests for image download
