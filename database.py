@@ -15,7 +15,6 @@ def setup_database():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 telegram_id INTEGER UNIQUE,
-                username TEXT,
                 full_name TEXT,
                 email TEXT,
                 points INTEGER DEFAULT 0
@@ -35,17 +34,32 @@ def setup_database():
                 linked_link TEXT,
                 FOREIGN KEY(user_id) REFERENCES users(telegram_id)
             );
+            
+                CREATE TABLE IF NOT EXISTS user_link_status (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegram_id INTEGER,
+                link_id INTEGER,
+                processed INTEGER DEFAULT 0,
+                UNIQUE(telegram_id, link_id)
+            );
+            
+                CREATE TABLE IF NOT EXISTS authorized_link_adders (
+                telegram_id INTEGER PRIMARY KEY,
+                full_name TEXT,
+                email TEXT,
+                added_by INTEGER
+            )
         """)
         conn.commit()
 
-def add_user(telegram_id, username, full_name, email):
+def add_user(telegram_id, full_name, email):
     """ ali """
     try:
         with connect_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO users (telegram_id, username, full_name, email) VALUES (?, ?, ?, ?)", 
-                        (telegram_id, username, full_name, email))
+                "INSERT INTO users (telegram_id, full_name, email) VALUES (?, ?, ?)", 
+                        (telegram_id, full_name, email))
             conn.commit()
     except sqlite3.Error as e:
         # Catch any SQLite errors and print them
@@ -74,3 +88,14 @@ def add_points(user_id, points=1):
         cursor.execute("UPDATE users SET points = points + ? WHERE telegram_id = ?",
                        (points, user_id))
         conn.commit()
+
+
+
+def get_links_for_user(user_id):
+    """Fetches all YouTube links for a specific user."""
+    with connect_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT youtube_link, description FROM links WHERE user_id = ?", (user_id,))
+        return cursor.fetchall()  # Returns a list of (link, description) tuples
+
+
