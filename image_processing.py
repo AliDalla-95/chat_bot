@@ -88,8 +88,8 @@ def check_text_in_image(image_path, required_text):
     extracted_text1 = extracted_text1.strip()
     required_text = required_text.lower().strip()
 
-    # print(f"Extracted Text: {extracted_text}")  # Debugging
-    # print(f"Extracted Text1: {extracted_text1}")  # Debugging
+    print(f"Extracted Text: {extracted_text}")  # Debugging
+    print(f"Extracted Text1: {extracted_text1}")  # Debugging
 
     # Ensure required text and subscription keywords are present
     return required_text in extracted_text or required_text in extracted_text1 and ("Subscribed" in extracted_text or "Subscribed" in extracted_text1)

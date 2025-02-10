@@ -584,8 +584,7 @@ def process_image_upload(message):
         bot.reply_to(message, f"✅ Image verified successfully! You earned 1 point.\n🚫 This link is now blocked for you.")
         bot.reply_to(message, "Perfect Go\nUse /viewlinks to continue.")
     else:
-        bot.reply_to(message, "❌ Image verification failed. Ensure the required text is present.")
-        bot.reply_to(message, "Sorry Not Bad Ok\nTry Again /viewlinks to Win.")
+        bot.reply_to(message, "❌ Image verification failed.\nSorry But Not Bad ..Ok\nTry Again /viewlinks to Win.")
 
     # Clean up: remove the temporary image file and pending submission record.
     if os.path.exists(image_path):
