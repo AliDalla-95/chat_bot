@@ -83,6 +83,7 @@ def init_db():
     c.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             user_id INTEGER,
+            adder TEXT,
             channel_id TEXT,
             channel_name TEXT,
             url TEXT,
@@ -244,6 +245,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
 
                         channel_id = channel['id']
                         channel_name = channel['snippet']['title']
+                        channel_name = filter_non_arabic_words(channel_name)
                         break
 
                 except HttpError as e:
@@ -259,7 +261,6 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
         conn = sqlite3.connect(DATABASE_NAME)
         try:
             c = conn.cursor()
-            
             # Check existing submissions
             c.execute("""
                 SELECT channel_id, channel_name 
@@ -279,17 +280,38 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await update.message.reply_text("\n".join(message))
                 return ConversationHandler.END
 
+
+            try:
+                cc = conn.cursor()
+                cc.execute("""
+                    SELECT fullname 
+                    FROM users 
+                    WHERE telegram_id = ?
+                """, (
+                    user.id,
+                ))
+                exit = cc.fetchone()
+                ex = exit[0]
+            except Exception as e:
+                logger.error(f"Channel processing error: {str(e)}")
+                await update.message.reply_text("❌ An error occurred. Please try again.")
+                
+
+            #     exit_name = exit
+            #     print(f"{exit_name}")
+            #     return exit_name
             # Insert new submission
             c.execute("""
                 INSERT INTO channels 
-                (user_id, channel_id, channel_name, url, submission_date)
-                VALUES (?, ?, ?, ?, ?)
+                (user_id, channel_id, channel_name, url, submission_date, adder)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 user.id,
                 channel_id,
                 channel_name,
                 url,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ex,
             ))
             conn.commit()
             
@@ -308,6 +330,26 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ An error occurred. Please try again.")
 
     return ConversationHandler.END
+
+
+
+def filter_non_arabic_words(text):
+    # This regex will help us detect if a word contains any Arabic character.
+    arabic_re = re.compile(r'[\u0600-\u06FF]')
+    
+    # Split the text into words. (This simple split may not handle punctuation perfectly.)
+    words = text.split()
+    filtered_words = []
+    
+    for word in words:
+        # If the word does NOT contain any Arabic letter, keep it.
+        if not arabic_re.search(word):
+            filtered_words.append(word)
+    
+    # Join the words back into a single string.
+    return ' '.join(filtered_words)
+
+
 # ========== ADDITIONAL FUNCTIONS ==========
 async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List all submitted channels for a user"""
@@ -483,7 +525,7 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
             
         channel_name = result[0]
-        c.execute("DELETE FROM channels WHERE channel_id = ?", (channel_id,))
+        c.execute("DELETE FROM channels WHERE channel_id = ? and user_id = ?", (channel_id,update.effective_user.id,))
         conn.commit()
         await update.message.reply_text(
             f"✅ Channel deleted:\n"
