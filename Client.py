@@ -58,7 +58,6 @@ def get_menu(user_id: int) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
 
 # ========== DATABASE OPERATIONS ==========
-# ========== DATABASE SCHEMA UPDATE ==========
 def init_db():
     """Initialize database with proper schema"""
     conn = sqlite3.connect(DATABASE_NAME)
@@ -72,7 +71,8 @@ def init_db():
             fullname TEXT,
             country TEXT,
             registration_date TEXT,
-            is_admin BOOLEAN DEFAULT 0
+            is_admin BOOLEAN DEFAULT 0,
+            is_banned BOOLEAN DEFAULT 0
         )
     """)
     c.execute("""
@@ -309,7 +309,7 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = sqlite3.connect(DATABASE_NAME)
         c = conn.cursor()
         c.execute("""
-            SELECT channel_name, url, submission_date 
+            SELECT channel_name, url,channel_id, submission_date 
             FROM channels 
             WHERE user_id = ?
         """, (user.id,))
@@ -321,10 +321,11 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         response = ["📋 Your submitted channels:"]
-        for idx, (name, url, date) in enumerate(channels, 1):
+        for idx, (name, url, channel_id, date) in enumerate(channels, 1):
             response.append(
                 f"{idx}. {name}\n"
                 f"   🔗 {url}\n"
+                f"🆔 ID: {channel_id}\n"
                 f"   📅 {date}"
             )
             
@@ -421,7 +422,8 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     keyboard = [
         ["📊 User Statistics", "📢 Broadcast Message"],
-        ["🚫 Ban User", "🔙 Main Menu"]
+        ["🚫 Ban User", "🗑 Delete Channel"],  # Updated buttons
+        ["🔙 Main Menu"]
     ]
     await update.message.reply_text(
         "👑 Admin Panel:",
@@ -435,11 +437,111 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if update.effective_message:
         await update.message.reply_text("⚠️ An error occurred. Please try again.")
 
+# ========== ADMIN DELETE CHANNELS ==========
+async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only channel deletion flow"""
+    user = update.effective_user
+    if str(user.id) != ADMIN_TELEGRAM_ID:
+        await update.message.reply_text("🚫 Access denied!")
+        return ConversationHandler.END
+
+    await update.message.reply_text("Enter Channel ID to delete:")
+    return "AWAIT_CHANNEL_ID"
+
+
+async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Confirm and delete channel"""
+    channel_id = update.message.text.strip()
+    conn = sqlite3.connect(DATABASE_NAME)
+    try:
+        c = conn.cursor()
+        c.execute("SELECT channel_name FROM channels WHERE channel_id = ?", (channel_id,))
+        result = c.fetchone()
+        
+        if not result:
+            await update.message.reply_text("❌ Channel not found")
+            return ConversationHandler.END
+            
+        channel_name = result[0]
+        c.execute("DELETE FROM channels WHERE channel_id = ?", (channel_id,))
+        conn.commit()
+        await update.message.reply_text(
+            f"✅ Channel deleted:\n"
+            f"📛 Name: {channel_name}\n"
+            f"🆔 ID: {channel_id}"
+        )
+    finally:
+        conn.close()
+    return ConversationHandler.END
+
+# ========== BAN USER FUNCTIONALITY ==========
+async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ban a user from using the bot"""
+    admin = update.effective_user
+    if str(admin.id) != ADMIN_TELEGRAM_ID:
+        await update.message.reply_text("🚫 Access denied!")
+        return
+
+    # Extract user ID from message (could be reply or direct input)
+    target_id = None
+    if update.message.reply_to_message:
+        target_id = update.message.reply_to_message.from_user.id
+    elif context.args and len(context.args) > 0:
+        try:
+            target_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("Usage: /ban <user_id> or reply to user's message")
+            return
+    else:
+        await update.message.reply_text("Usage: /ban <user_id> or reply to user's message")
+        return
+
+    conn = sqlite3.connect(DATABASE_NAME)
+    try:
+        c = conn.cursor()
+        # Ban user
+        c.execute("""
+            UPDATE users 
+            SET is_banned = 1 
+            WHERE telegram_id = ?
+        """, (target_id,))
+        
+        if c.rowcount == 0:
+            await update.message.reply_text("❌ User not found in database")
+            return
+            
+        conn.commit()
+        await update.message.reply_text(f"✅ User {target_id} has been banned")
+        
+        # Notify banned user if possible
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text="🚫 Your access to this bot has been revoked"
+            )
+        except Exception as e:
+            logger.error(f"Ban notification failed: {str(e)}")
+            
+    finally:
+        conn.close()
+
 # ========== APPLICATION SETUP ==========
 def main() -> None:
     """Configure and start the bot"""
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
+    
+    # Add admin handlers
+    admin_conv = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex(r"^🗑 Delete Channel$"), delete_channel),
+            MessageHandler(filters.Regex(r"^🚫 Ban User$"), ban_user)
+        ],
+        states={
+            "AWAIT_CHANNEL_ID": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)]
+        },
+        fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)]
+    )
+    
     # Conversation handler
     conv_handler = ConversationHandler(
         entry_points=[
@@ -460,9 +562,51 @@ def main() -> None:
     application.add_handlers([
         CommandHandler("start", start),
         conv_handler,
+        admin_conv,
         MessageHandler(filters.Regex(r"^👑 Admin Panel$"), handle_admin_panel),
         MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler)
     ])
+    
+    # Add ban command
+    application.add_handler(CommandHandler("ban", ban_user))
+    
+    # Update registration checks
+    async def is_banned(telegram_id: int) -> bool:
+        conn = sqlite3.connect(DATABASE_NAME)
+        c = conn.cursor()
+        c.execute("SELECT is_banned FROM users WHERE telegram_id = ?", (telegram_id,))
+        result = c.fetchone()
+        conn.close()
+        return result and result[0] == 1 if result else False
+
+    # Define ban check wrapper as a normal function (not async)
+    def check_ban_wrapper(handler):
+        async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            if await is_banned(update.effective_user.id):
+                await update.message.reply_text("🚫 Your access to this bot has been revoked")
+                return ConversationHandler.END
+            return await handler(update, context)
+        return wrapped
+    
+    # Wrap all handlers with ban check
+    def wrap_handler(handler):
+        if hasattr(handler, "callback"):
+            handler.callback = check_ban_wrapper(handler.callback)
+        # If it's a ConversationHandler, wrap all internal callbacks
+        elif isinstance(handler, ConversationHandler):
+            for entry in handler.entry_points:
+                wrap_handler(entry)
+            for state_handlers in handler.states.values():
+                for sub_handler in state_handlers:
+                    wrap_handler(sub_handler)
+            for fallback in handler.fallbacks:
+                wrap_handler(fallback)
+
+    # Iterate over the first layer of handlers in the application
+    for handler in application.handlers[0]:
+        wrap_handler(handler)
+        
+        
     application.add_handler(CommandHandler("mychannels", list_channels))
     application.add_error_handler(error_handler)
     application.run_polling()
