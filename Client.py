@@ -11,11 +11,16 @@ from telegram.ext import (
     ConversationHandler,
     ContextTypes,
 )
-
+import os
+import sys
+from pathlib import Path
+import psutil
+from telegram.error import Conflict
 import cachetools
 from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
 import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning, module="googleapiclient.discovery_cache")
 # ========== CONFIGURATION ==========
 TELEGRAM_TOKEN = "7861338140:AAG3w1f7UBcwKpdYh0ipfLB3nMZM3sLasP4"
@@ -43,12 +48,12 @@ logger = logging.getLogger(__name__)
 # ========== UPDATED MENU SYSTEM ==========
 MAIN_MENU = [
     ["📝 Register", "🔍 Input Your YouTube URL Channel"],
-    ["📋 My Channels"]  # Added new menu item
+    ["📋 My Channels","Start"]  # Added new menu item
 ]
 
 ADMIN_MENU = [
     ["🔍 Input Your YouTube URL Channel", "👑 Admin Panel"],
-    ["📋 My Channels"]  # Added for admin too
+    ["📋 My Channels","Start"]  # Added for admin too
 ]
 
 def get_menu(user_id: int) -> ReplyKeyboardMarkup:
@@ -146,6 +151,8 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await list_channels(update, context)
     elif text == "🔙 Main Menu":
         await show_main_menu(update, user)
+    elif text == "Start":
+        await start(update, user)
     else:
         await update.message.reply_text("Please use the menu buttons")
 
@@ -431,13 +438,25 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
 
-# ========== ERROR HANDLING ==========
+# ========== IMPROVED ERROR HANDLING ==========
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log errors and notify user"""
-    logger.error(msg="Exception:", exc_info=context.error)
-    if update.effective_message:
-        await update.message.reply_text("⚠️ An error occurred. Please try again.")
-
+    """Log errors and handle different error types"""
+    logger.error("Exception:", exc_info=context.error)
+    
+    try:
+        # Handle cases where update might be None
+        if update and update.effective_message:
+            error_message = "⚠️ An error occurred. Please try again."
+            
+            # Handle specific error types
+            if isinstance(context.error, Conflict):
+                error_message = "🔌 Bot conflict detected! Please restart the bot."
+                
+            await update.effective_message.reply_text(error_message)
+            
+    except Exception as e:
+        logger.error(f"Error handler failed: {str(e)}")
+        
 # ========== ADMIN DELETE CHANNELS ==========
 async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin-only channel deletion flow"""
@@ -526,91 +545,162 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         conn.close()
 
-# ========== APPLICATION SETUP ==========
 def main() -> None:
-    """Configure and start the bot"""
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    
-    # Add admin handlers
-    admin_conv = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex(r"^🗑 Delete Channel$"), delete_channel),
-            MessageHandler(filters.Regex(r"^🚫 Ban User$"), ban_user)
-        ],
-        states={
-            "AWAIT_CHANNEL_ID": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)]
-        },
-        fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)]
-    )
-    
-    # Conversation handler
-    conv_handler = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex(r"^📝 Register$"), handle_registration),
-            MessageHandler(filters.Regex(r"^🔍 Input Your YouTube URL Channel$"), handle_channel_verification)
-        ],
-        states={
-            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, email_handler)],
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_handler)],
-            FULLNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_handler)],
-            COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, country_handler)],
-            CHANNEL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_channel_url)]
-        },
-        fallbacks=[],
-    )
+    """Configure and start the bot with comprehensive error handling"""
+    pid_file = Path("bot.pid")
+    logger = logging.getLogger(__name__)
 
-    # Add handlers
-    application.add_handlers([
-        CommandHandler("start", start),
-        conv_handler,
-        admin_conv,
-        MessageHandler(filters.Regex(r"^👑 Admin Panel$"), handle_admin_panel),
-        MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler)
-    ])
-    
-    # Add ban command
-    application.add_handler(CommandHandler("ban", ban_user))
-    
-    # Update registration checks
-    async def is_banned(telegram_id: int) -> bool:
-        conn = sqlite3.connect(DATABASE_NAME)
-        c = conn.cursor()
-        c.execute("SELECT is_banned FROM users WHERE telegram_id = ?", (telegram_id,))
-        result = c.fetchone()
-        conn.close()
-        return result and result[0] == 1 if result else False
+    try:
+        # ========== PID FILE HANDLING ==========
+        # Check for existing instances with validation
+        if pid_file.exists():
+            try:
+                content = pid_file.read_text().strip()
+                if not content:
+                    raise ValueError("Empty PID file")
+                
+                old_pid = int(content)
+                if psutil.pid_exists(old_pid):
+                    print("⛔ Another bot instance is already running!")
+                    print("❗ Use 'kill %d' or restart your computer" % old_pid)
+                    sys.exit(1)
+                    
+            except (ValueError, psutil.NoSuchProcess) as e:
+                logger.warning(f"Cleaning invalid PID file: {str(e)}")
+                pid_file.unlink(missing_ok=True)
+            except psutil.Error as e:
+                logger.error(f"PID check failed: {str(e)}")
+                sys.exit(1)
 
-    # Define ban check wrapper as a normal function (not async)
-    def check_ban_wrapper(handler):
-        async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
-            if await is_banned(update.effective_user.id):
-                await update.message.reply_text("🚫 Your access to this bot has been revoked")
-                return ConversationHandler.END
-            return await handler(update, context)
-        return wrapped
-    
-    # Wrap all handlers with ban check
-    def wrap_handler(handler):
-        if hasattr(handler, "callback"):
-            handler.callback = check_ban_wrapper(handler.callback)
-        # If it's a ConversationHandler, wrap all internal callbacks
-        elif isinstance(handler, ConversationHandler):
-            for entry in handler.entry_points:
-                wrap_handler(entry)
-            for state_handlers in handler.states.values():
-                for sub_handler in state_handlers:
-                    wrap_handler(sub_handler)
-            for fallback in handler.fallbacks:
-                wrap_handler(fallback)
+        # Write new PID file with atomic write
+        try:
+            with pid_file.open("w") as f:
+                f.write(str(os.getpid()))
+                os.fsync(f.fileno())
+        except IOError as e:
+            logger.critical(f"Failed to write PID file: {str(e)}")
+            sys.exit(1)
 
-    # Iterate over the first layer of handlers in the application
-    for handler in application.handlers[0]:
-        wrap_handler(handler)
-        
-        
-    application.add_handler(CommandHandler("mychannels", list_channels))
-    application.add_error_handler(error_handler)
-    application.run_polling()
+        # ========== BOT INITIALIZATION ==========
+        application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+
+        # ========== HANDLER CONFIGURATION ==========
+        # Admin conversation handler
+        admin_conv = ConversationHandler(
+            entry_points=[
+                MessageHandler(filters.Regex(r"^🗑 Delete Channel$"), delete_channel),
+                MessageHandler(filters.Regex(r"^🚫 Ban User$"), ban_user)
+            ],
+            states={
+                "AWAIT_CHANNEL_ID": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)]
+            },
+            fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)],
+            map_to_parent={ConversationHandler.END: ConversationHandler.END}
+        )
+
+        # Main conversation handler
+        conv_handler = ConversationHandler(
+            entry_points=[
+                MessageHandler(filters.Regex(r"^📝 Register$"), handle_registration),
+                MessageHandler(filters.Regex(r"^🔍 Input Your YouTube URL Channel$"), handle_channel_verification)
+            ],
+            states={
+                EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, email_handler)],
+                PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_handler)],
+                FULLNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_handler)],
+                COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, country_handler)],
+                CHANNEL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_channel_url)]
+            },
+            fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)]
+        )
+
+        # ========== HANDLER REGISTRATION ==========
+        handlers = [
+            CommandHandler("start", start),
+            conv_handler,
+            admin_conv,
+            MessageHandler(filters.Regex(r"^👑 Admin Panel$"), handle_admin_panel),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler),
+            CommandHandler("ban", ban_user),
+            CommandHandler("mychannels", list_channels)
+        ]
+
+        # ========== BAN CHECK WRAPPER ==========
+        async def is_banned(telegram_id: int) -> bool:
+            """Check if user is banned with DB connection handling"""
+            try:
+                conn = sqlite3.connect(DATABASE_NAME)
+                c = conn.cursor()
+                c.execute("SELECT is_banned FROM users WHERE telegram_id = ?", (telegram_id,))
+                result = c.fetchone()
+                return bool(result and result[0] == 1)
+            except sqlite3.Error as e:
+                logger.error(f"Ban check failed: {str(e)}")
+                return False
+            finally:
+                conn.close()
+
+        def wrap_handler(handler):
+            """Safe handler wrapper with ban checking"""
+            if not hasattr(handler, 'callback'):
+                return handler
+                
+            original_callback = handler.callback
+            async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                try:
+                    # Skip if no valid user context
+                    if not update or not update.effective_user:
+                        return await original_callback(update, context)
+                        
+                    # Check ban status
+                    if await is_banned(update.effective_user.id):
+                        await update.message.reply_text("🚫 Your access has been revoked")
+                        return ConversationHandler.END
+                        
+                    return await original_callback(update, context)
+                except Exception as e:
+                    logger.error(f"Handler error: {str(e)}")
+                    return ConversationHandler.END
+                    
+            handler.callback = wrapped
+            return handler
+
+        # Apply ban checks to all handlers
+        wrapped_handlers = [wrap_handler(h) for h in handlers]
+        application.add_handlers(wrapped_handlers)
+
+        # ========== ERROR HANDLING ==========
+        application.add_error_handler(error_handler)
+
+        # ========== BOT STARTUP ==========
+        logger.info("Starting bot...")
+        application.run_polling(
+            poll_interval=2,
+            timeout=30,
+            drop_pending_updates=True
+        )
+
+    except Conflict as e:
+        logger.critical(f"Bot conflict: {str(e)}")
+        print("""
+        🔌 Connection conflict detected!
+        Possible solutions:
+        1. Wait 10 seconds before restarting
+        2. Check for other running instances
+        3. Verify your bot token is unique
+        """)
+    except Exception as e:
+        logger.critical(f"Fatal error: {str(e)}", exc_info=True)
+    finally:
+        # ========== CLEANUP ==========
+        try:
+            pid_file.unlink(missing_ok=True)
+            logger.info("Cleanup completed")
+        except Exception as e:
+            logger.error(f"Cleanup failed: {str(e)}")
+
+        # Ensure database connections are closed
+        sqlite3.connect(DATABASE_NAME).close()
 
 if __name__ == "__main__":
     main()
