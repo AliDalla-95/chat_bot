@@ -386,7 +386,7 @@ def list_links(message):
     # Query the links from the database
     with connect_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, youtube_link, description,adder FROM links")
+        cursor.execute("SELECT id, youtube_link, description FROM links")
         links = cursor.fetchall()
 
     if not links:
@@ -395,8 +395,8 @@ def list_links(message):
 
     # For each link, send a message with an inline keyboard button for deletion
     for link in links:
-        link_id, youtube_link, description, adder = link
-        text = f"ID: {link_id}\nLink: {youtube_link}\nDescription: {description}\nAdder: {adder}"
+        link_id, youtube_link, description = link
+        text = f"ID: {link_id}\nLink: {youtube_link}\nDescription: {description}"
         markup = types.InlineKeyboardMarkup()
         # Set the callback_data to include the link id (e.g., "delete_3")
         delete_button = types.InlineKeyboardButton("Delete", callback_data=f"delete_{link_id}")
@@ -576,12 +576,13 @@ def process_image_upload(message):
     bot.reply_to(message, f"🔍 Checking image")
 
     # Call your image processing function from image_processing.py.
-    result = ocr_processor.check_text_in_image(image_path, required_channel)
+    result = image_processing.check_text_in_image(image_path, required_channel)
 
     if result:
         mark_link_processed(telegram_id, link_id)
         update_user_points(telegram_id, 1)
-        bot.reply_to(message, f"✅ Image verified successfully! You earned 1 point.\n🚫 This link is now blocked for you.\nPerfect Go\nUse /viewlinks to continue.")
+        bot.reply_to(message, f"✅ Image verified successfully! You earned 1 point.\n🚫 This link is now blocked for you.")
+        bot.reply_to(message, "Perfect Go\nUse /viewlinks to continue.")
     else:
         bot.reply_to(message, "❌ Image verification failed.\nSorry But Not Bad ..Ok\nTry Again /viewlinks to Win.")
 
@@ -625,9 +626,7 @@ def get_paginated_links(user_id, page=0, per_page=5):
 def send_links_page(chat_id, user_id, page):
     """Sends a specific page of YouTube links."""
     links, total_pages = get_paginated_links(user_id, page)
-    if not links:
-        bot.send_message(chat_id, "❌ No available links at the moment.")
-        return
+
     # Create message text
     text = "**🔗 YouTube Links (Page {}/{})**\n\n".format(page + 1, total_pages)
     for link in links:
@@ -638,18 +637,15 @@ def send_links_page(chat_id, user_id, page):
         markup.add(submit_btn)
         bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
     # Inline Keyboard for Navigation
-    # markup = InlineKeyboardMarkup()
-    if total_pages > 1:
-        markup = InlineKeyboardMarkup()
-        if page > 0:
-            markup.add(InlineKeyboardButton("⬅️", callback_data=f"prev_{page-1}"))
-            bot.send_message(chat_id, "Previous Page:", parse_mode="Markdown", reply_markup=markup)
-            return
-        if page < total_pages - 1:
-            markup.add(InlineKeyboardButton("➡️", callback_data=f"next_{page+1}"))
-            bot.send_message(chat_id, "Next Page:", parse_mode="Markdown", reply_markup=markup)
-            return
-        # bot.send_message(chat_id, "📄 Navigate:", parse_mode="Markdown", reply_markup=markup)
+    markup = InlineKeyboardMarkup()
+
+    if page > 0:
+        markup.add(InlineKeyboardButton("⬅️ Previous", callback_data=f"prev_{page-1}"))
+    
+    if page < total_pages - 1:
+        markup.add(InlineKeyboardButton("Next ➡️", callback_data=f"next_{page+1}"))
+
+    bot.send_message(chat_id, "More Or Less ..............", parse_mode="Markdown", reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("prev_") or call.data.startswith("next_"))
