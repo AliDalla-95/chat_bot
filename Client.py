@@ -324,9 +324,10 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for idx, (name, url, channel_id, date) in enumerate(channels, 1):
             response.append(
                 f"{idx}. {name}\n"
-                f"   🔗 {url}\n"
+                f"🔗 {url}\n"
                 f"🆔 ID: {channel_id}\n"
-                f"   📅 {date}"
+                f"📅 {date}\n"
+                f"--------------------------------------------\n"
             )
             
         await update.message.reply_text("\n\n".join(response))
