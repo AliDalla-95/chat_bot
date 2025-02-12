@@ -471,7 +471,7 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     
     keyboard = [
-        ["📊 User Statistics", "📢 Broadcast Message"],
+        # ["📊 User Statistics", "📢 Broadcast Message"],
         ["🚫 Ban User", "🗑 Delete Channel"],  # Updated buttons
         ["🔙 Main Menu"]
     ]
