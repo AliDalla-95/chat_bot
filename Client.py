@@ -91,7 +91,19 @@ def init_db():
             url TEXT,
             submission_date TEXT,
             PRIMARY KEY (user_id, channel_id),
-            FOREIGN KEY (user_id) REFERENCES users(telegram_id)
+            FOREIGN KEY (user_id) REFERENCES users(telegram_id),
+            FOREIGN KEY (user_id,url) REFERENCES likes(user_id,url) 
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS likes (
+            "user_id"	INTEGER,
+            "channel_id"	TEXT,
+            "adder"	TEXT,
+            "url"	TEXT,
+            "channel_name"	TEXT,
+            "channel_likes"	INTEGER,
+            PRIMARY KEY("user_id","url")
         )
     """)
     conn.commit()
@@ -335,21 +347,35 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 
+
 def filter_non_arabic_words(text):
     # This regex will help us detect if a word contains any Arabic character.
-    arabic_re = re.compile(r'[\u0600-\u06FF]')
+    # arabic_re = re.compile(r'[\u0600-\u06FF]')
+    arabic_re = re.compile(r'[a-zA-Z\s]+')
     
-    # Split the text into words. (This simple split may not handle punctuation perfectly.)
-    words = text.split()
-    filtered_words = []
+    # Find all matching English words and spaces
+    matches = arabic_re.findall(text)
     
-    for word in words:
-        # If the word does NOT contain any Arabic letter, keep it.
-        if not arabic_re.search(word):
-            filtered_words.append(word)
+    # Join them into a single string and remove extra spaces
+    return ' '.join(''.join(matches).split())
+
+
+# def filter_non_arabic_words(text):
+#     # This regex will help us detect if a word contains any Arabic character.
+#     arabic_re = re.compile(r'[\u0600-\u06FF]')
+#     # arabic_re = re.compile(r'[a-zA-Z\s]+')
     
-    # Join the words back into a single string.
-    return ' '.join(filtered_words)
+#     # Split the text into words. (This simple split may not handle punctuation perfectly.)
+#     words = text.split()
+#     filtered_words = []
+    
+#     for word in words:
+#         # If the word does NOT contain any Arabic letter, keep it.
+#         if not arabic_re.search(word):
+#             filtered_words.append(word)
+    
+#     # Join the words back into a single string.
+#     return ' '.join(filtered_words)
 
 
 # ========== ADDITIONAL FUNCTIONS ==========
@@ -528,6 +554,7 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         channel_name = result[0]
         c.execute("DELETE FROM channels WHERE url = ? and user_id = ?", (url,update.effective_user.id,))
+        c.execute("DELETE FROM likes WHERE url = ? and user_id = ?", (url,update.effective_user.id,))
         conn.commit()
         await update.message.reply_text(
             f"✅ Channel deleted:\n"
