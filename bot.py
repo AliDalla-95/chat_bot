@@ -129,7 +129,7 @@ def handle_text_commands(message):
 ##########################
 def connect_db():
     """Returns a connection to the SQLite database."""
-    return sqlite3.connect('database.db')  # Adjust the path as needed
+    return sqlite3.connect('bot.db')  # Adjust the path as needed
 
 def user_exists(telegram_id):
     """Check if the user already exists in the database."""
