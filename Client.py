@@ -259,7 +259,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
 
                         channel_id = channel['id']
                         channel_name = channel['snippet']['title']
-                        channel_name = filter_non_arabic_words(channel_name)
+                        channel_name = filter_non_arabic_words(channel_name,url)
                         break
 
                 except HttpError as e:
@@ -348,16 +348,25 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 
-def filter_non_arabic_words(text):
-    # This regex will help us detect if a word contains any Arabic character.
-    # arabic_re = re.compile(r'[\u0600-\u06FF]')
-    arabic_re = re.compile(r'[a-zA-Z\s]+')
+def filter_non_arabic_words(text, url):    
+    # Regex to match only English words and spaces
+    english_re = re.compile(r'[a-zA-Z\s]+')
     
-    # Find all matching English words and spaces
-    matches = arabic_re.findall(text)
+    # Find all matching English parts
+    matches = english_re.findall(text)
     
     # Join them into a single string and remove extra spaces
-    return ' '.join(''.join(matches).split())
+    filtered_text = ' '.join(''.join(matches).split())
+
+    # If no English words are found, check for @ in URL
+    if not filtered_text.strip():
+        at_match = re.search(r'@([a-zA-Z0-9_]+)', url)
+        if at_match:
+            return at_match.group(1)  # Return the part after @
+        else:
+            return text  # Return the original text if no @ is found
+
+    return filtered_text
 
 
 # def filter_non_arabic_words(text):
