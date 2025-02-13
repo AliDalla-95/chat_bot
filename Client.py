@@ -70,7 +70,7 @@ def init_db():
     conn = sqlite3.connect(DATABASE_NAME)
     c = conn.cursor()
     c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE IF NOT EXISTS clients (
             user_id INTEGER PRIMARY KEY,
             telegram_id INTEGER UNIQUE,
             email TEXT,
@@ -91,7 +91,7 @@ def init_db():
             url TEXT,
             submission_date TEXT,
             PRIMARY KEY (user_id, channel_id),
-            FOREIGN KEY (user_id) REFERENCES users(telegram_id),
+            FOREIGN KEY (user_id) REFERENCES clients(telegram_id),
             FOREIGN KEY (user_id,url) REFERENCES likes(user_id,url) 
         )
     """)
@@ -128,7 +128,7 @@ async def is_registered(telegram_id: int) -> bool:
     """Check if user is registered"""
     conn = sqlite3.connect(DATABASE_NAME)
     c = conn.cursor()
-    c.execute("SELECT 1 FROM users WHERE telegram_id = ?", (telegram_id,))
+    c.execute("SELECT 1 FROM clients WHERE telegram_id = ?", (telegram_id,))
     result = c.fetchone()
     conn.close()
     return bool(result)
@@ -144,7 +144,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         conn = sqlite3.connect(DATABASE_NAME)
         c = conn.cursor()
         c.execute("""
-            INSERT INTO users 
+            INSERT INTO clients 
             (telegram_id, email, phone, fullname, country, registration_date, is_admin)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
@@ -312,7 +312,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
                 cc = conn.cursor()
                 cc.execute("""
                     SELECT fullname 
-                    FROM users 
+                    FROM clients 
                     WHERE telegram_id = ?
                 """, (
                     user.id,
@@ -479,7 +479,7 @@ async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         conn = sqlite3.connect(DATABASE_NAME)
         c = conn.cursor()
         c.execute("""
-            INSERT INTO users 
+            INSERT INTO clients 
             (telegram_id, email, phone, fullname, country, registration_date)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
@@ -667,7 +667,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         c = conn.cursor()
         # Ban user
         c.execute("""
-            UPDATE users 
+            UPDATE clients 
             SET is_banned = 1 
             WHERE telegram_id = ?
         """, (target_id,))
@@ -782,7 +782,7 @@ def main() -> None:
             try:
                 conn = sqlite3.connect(DATABASE_NAME)
                 c = conn.cursor()
-                c.execute("SELECT is_banned FROM users WHERE telegram_id = ?", (telegram_id,))
+                c.execute("SELECT is_banned FROM clients WHERE telegram_id = ?", (telegram_id,))
                 result = c.fetchone()
                 return bool(result and result[0] == 1)
             except sqlite3.Error as e:
