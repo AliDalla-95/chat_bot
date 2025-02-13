@@ -96,6 +96,18 @@ def init_db():
         )
     """)
     c.execute("""
+        CREATE TABLE IF NOT EXISTS "user_likes" (
+            "user_id"	INTEGER,
+            "fullname"	TEXT,
+            "email"	TEXT,
+            "adder"	TEXT,
+            "url"	TEXT,
+            "channel_name"	TEXT,
+            "channel_likes"	INTEGER DEFAULT 1,
+            PRIMARY KEY("user_id")
+        )
+    """)
+    c.execute("""
         CREATE TABLE IF NOT EXISTS likes (
             "user_id"	INTEGER,
             "channel_id"	TEXT,
