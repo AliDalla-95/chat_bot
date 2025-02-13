@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 MAIN_MENU = [
     ["📝 Register","Start"],
     ["🔍 Input Your YouTube URL Channel"],
-    ["📋 My Channels"]  # Added new menu item
+    ["📋 My Channels", "🗑 Delete Channel"]  # Added new menu item
 ]
 
 ADMIN_MENU = [
@@ -167,7 +167,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     elif text == "🔙 Main Menu":
         await show_main_menu(update, user)
     elif text == "Start":
-        await start(update, user)
+        await start(update, context)
     else:
         await update.message.reply_text("Please use the menu buttons")
 
@@ -721,7 +721,7 @@ def main() -> None:
         # Admin conversation handler
         admin_conv = ConversationHandler(
             entry_points=[
-                MessageHandler(filters.Regex(r"^🗑 Delete  ALL Channel$"), delete_channel_admin),
+                MessageHandler(filters.Regex(r"^🗑 Delete Channel"), delete_channel),
                 MessageHandler(filters.Regex(r"^🗑 Delete  ALL Channel$"), delete_channel_admin),
                 MessageHandler(filters.Regex(r"^🚫 Ban User$"), ban_user)
             ],
