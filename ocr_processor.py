@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class FreeOCRProcessor:
     def __init__(self):
         self.base_url = "https://api.ocr.space/parse/image"
-        self.public_key = "helloworld"  # Public demo key
+        self.public_key = "K84097137188957"  # Public demo key
         self.max_retries = 3
         self.retry_delay = 5  # seconds
         self.hourly_limit = 300
@@ -120,7 +120,7 @@ def check_text_in_image(image_path, chosen_words):
             
     if not ocr_text:
         return False
-    print(f"{ocr_text}")
+    # print(f"{ocr_text}")
     # Ensure chosen_words is a list
     if isinstance(chosen_words, str):
         chosen_words = [chosen_words]
