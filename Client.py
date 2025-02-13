@@ -22,7 +22,7 @@ from googleapiclient.discovery import build
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning, module="googleapiclient.discovery_cache")
-# ========== CONFIGURATION ==========
+# ========== CONFIGURATION ==========admin
 TELEGRAM_TOKEN = "7861338140:AAG3w1f7UBcwKpdYh0ipfLB3nMZM3sLasP4"
 YOUTUBE_API_KEY = "AIzaSyCH0lUUlI-u1ziHsHiSl8aTC2J0nFU2l2Q"
 ADMIN_TELEGRAM_ID = "6106281772"  # Get this from @userinfobot
@@ -47,13 +47,15 @@ logger = logging.getLogger(__name__)
 # ========== MENU SYSTEM ==========
 # ========== UPDATED MENU SYSTEM ==========
 MAIN_MENU = [
-    ["📝 Register", "🔍 Input Your YouTube URL Channel"],
-    ["📋 My Channels","Start"]  # Added new menu item
+    ["📝 Register","Start"],
+    ["🔍 Input Your YouTube URL Channel"],
+    ["📋 My Channels"]  # Added new menu item
 ]
 
 ADMIN_MENU = [
-    ["🔍 Input Your YouTube URL Channel", "👑 Admin Panel"],
-    ["📋 My Channels","Start"]  # Added for admin too
+    ["Start", "👑 Admin Panel"],
+    ["🔍 Input Your YouTube URL Channel"],
+    ["📋 My Channels","🗑 Delete Channel"]  # Added for admin too
 ]
 
 def get_menu(user_id: int) -> ReplyKeyboardMarkup:
@@ -473,7 +475,7 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
     keyboard = [
         # ["📊 User Statistics", "📢 Broadcast Message"],
         ["🚫 Ban User", "🗑 Delete Channel"],  # Updated buttons
-        ["🔙 Main Menu"]
+        ["🔙 Main Menu","🗑 Delete  ALL Channel"]
     ]
     await update.message.reply_text(
         "👑 Admin Panel:",
@@ -502,22 +504,22 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # ========== ADMIN DELETE CHANNELS ==========
 async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin-only channel deletion flow"""
-    user = update.effective_user
-    if str(user.id) != ADMIN_TELEGRAM_ID:
-        await update.message.reply_text("🚫 Access denied!")
-        return ConversationHandler.END
+    # user = update.effective_user
+    # if str(user.id) != ADMIN_TELEGRAM_ID:
+    #     await update.message.reply_text("🚫 Access denied!")
+    #     return ConversationHandler.END
 
-    await update.message.reply_text("Enter Channel ID to delete:")
-    return "AWAIT_CHANNEL_ID"
+    await update.message.reply_text("Enter Channel URL to delete:")
+    return "AWAIT_CHANNEL_URL"
 
 
 async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Confirm and delete channel"""
-    channel_id = update.message.text.strip()
+    url = update.message.text.strip()
     conn = sqlite3.connect(DATABASE_NAME)
     try:
         c = conn.cursor()
-        c.execute("SELECT channel_name FROM channels WHERE channel_id = ?", (channel_id,))
+        c.execute("SELECT channel_name FROM channels WHERE url = ? and user_id = ?", (url,update.effective_user.id,))
         result = c.fetchone()
         
         if not result:
@@ -525,16 +527,69 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
             
         channel_name = result[0]
-        c.execute("DELETE FROM channels WHERE channel_id = ? and user_id = ?", (channel_id,update.effective_user.id,))
+        c.execute("DELETE FROM channels WHERE url = ? and user_id = ?", (url,update.effective_user.id,))
         conn.commit()
         await update.message.reply_text(
             f"✅ Channel deleted:\n"
             f"📛 Name: {channel_name}\n"
-            f"🆔 ID: {channel_id}"
+            f"🔗 URL: {url}"
         )
     finally:
         conn.close()
     return ConversationHandler.END
+
+AWAIT_CHANNEL_URL_ADMIN, AWAIT_CHANNEL_ADDER_ADMIN = range(2)
+
+async def delete_channel_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only channel deletion flow: prompt for channel URL."""
+    user = update.effective_user
+    if str(user.id) != ADMIN_TELEGRAM_ID:
+        await update.message.reply_text("🚫 Access denied!")
+        return ConversationHandler.END
+
+    await update.message.reply_text("Enter Channel URL to delete:")
+    return "AWAIT_CHANNEL_URL_ADMIN"
+
+# Step 2: Receive the Channel URL and prompt for the adder
+async def receive_channel_url_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Store the channel URL and prompt for the adder."""
+    # Save the channel URL in user_data for later retrieval
+    context.user_data["channel_url"] = update.message.text.strip()
+    await update.message.reply_text("And enter the 'adder' (the user who added the channel):")
+    return "AWAIT_ADDER"
+
+# Step 3: Receive the adder and confirm deletion
+async def confirm_delete_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Confirm deletion using the stored channel URL and the provided adder."""
+    adder = update.message.text.strip()  # Now this is the admin's input text, not a Message object
+    url = context.user_data.get("channel_url")
+    
+    if not url:
+        await update.message.reply_text("Channel URL not found. Aborting deletion.")
+        return ConversationHandler.END
+
+    conn = sqlite3.connect(DATABASE_NAME)
+    try:
+        c = conn.cursor()
+        c.execute("SELECT channel_name FROM channels WHERE url = ? and adder = ?", (url, adder))
+        result = c.fetchone()
+        if not result:
+            await update.message.reply_text("❌ Channel not found")
+            return ConversationHandler.END
+            
+        channel_name = result[0]
+        c.execute("DELETE FROM channels WHERE url = ? and adder = ?", (url, adder))
+        conn.commit()
+        await update.message.reply_text(
+            f"✅ Channel deleted:\n"
+            f"📛 Name: {channel_name}\n"
+            f"🔗 URL: {url}"
+        )
+    finally:
+        conn.close()
+
+    return ConversationHandler.END
+
 
 # ========== BAN USER FUNCTIONALITY ==========
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -630,11 +685,14 @@ def main() -> None:
         # Admin conversation handler
         admin_conv = ConversationHandler(
             entry_points=[
-                MessageHandler(filters.Regex(r"^🗑 Delete Channel$"), delete_channel),
+                MessageHandler(filters.Regex(r"^🗑 Delete  ALL Channel$"), delete_channel_admin),
+                MessageHandler(filters.Regex(r"^🗑 Delete  ALL Channel$"), delete_channel_admin),
                 MessageHandler(filters.Regex(r"^🚫 Ban User$"), ban_user)
             ],
             states={
-                "AWAIT_CHANNEL_ID": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)]
+                "AWAIT_CHANNEL_URL": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)],
+                "AWAIT_CHANNEL_URL_ADMIN": [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_channel_url_admin)],
+                "AWAIT_ADDER": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete_admin)],
             },
             fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)],
             map_to_parent={ConversationHandler.END: ConversationHandler.END}
@@ -644,14 +702,16 @@ def main() -> None:
         conv_handler = ConversationHandler(
             entry_points=[
                 MessageHandler(filters.Regex(r"^📝 Register$"), handle_registration),
-                MessageHandler(filters.Regex(r"^🔍 Input Your YouTube URL Channel$"), handle_channel_verification)
+                MessageHandler(filters.Regex(r"^🔍 Input Your YouTube URL Channel$"), handle_channel_verification),
+                MessageHandler(filters.Regex(r"^🗑 Delete Channel$"), delete_channel),
             ],
             states={
                 EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, email_handler)],
                 PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_handler)],
                 FULLNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_handler)],
                 COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, country_handler)],
-                CHANNEL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_channel_url)]
+                CHANNEL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_channel_url)],
+                "AWAIT_CHANNEL_URL": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)],
             },
             fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)]
         )
