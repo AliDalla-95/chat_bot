@@ -103,6 +103,7 @@ def init_db():
             "adder"	TEXT,
             "url"	TEXT,
             "channel_name"	TEXT,
+        	"submission_date"	TEXT,
             "channel_likes"	INTEGER DEFAULT 1,
             PRIMARY KEY("user_id")
         )
