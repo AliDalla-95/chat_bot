@@ -131,8 +131,10 @@ def check_text_in_image(image_path, chosen_words):
     # else:
     #     return False
     # Option 2: Using regular expressions for whole-word matching
+    # print(f"chosen_words: {chosen_words}")
     for word in chosen_words:
         pattern = r'\b' + re.escape(word) + r'\b'
+        # print(f"word:{word}")
         if not re.search(pattern, ocr_text, re.IGNORECASE | re.UNICODE):
             return False
         
@@ -140,9 +142,7 @@ def check_text_in_image(image_path, chosen_words):
     if not re.search(r'\bSubscribed\b|\bتم الاشتراك\b|\bВы подписаны\b', ocr_text, re.IGNORECASE | re.UNICODE):
         return False
     
-    return True
-    
-    
+    return True    
 # if __name__ == "__main__":
 #     pass
 

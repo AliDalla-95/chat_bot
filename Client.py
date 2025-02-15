@@ -290,10 +290,10 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             c = conn.cursor()
             # Check existing submissions
             c.execute("""
-                SELECT channel_id, channel_name 
-                FROM channels 
-                WHERE user_id = ? 
-                AND (channel_id = ? OR channel_name = ?)
+                SELECT channel_id, description 
+                FROM links 
+                WHERE added_by = ? 
+                AND (channel_id = ? OR description = ?)
             """, (user.id, channel_id, channel_name))
             
             existing = c.fetchone()
@@ -328,20 +328,52 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             #     print(f"{exit_name}")
             #     return exit_name
             # Insert new submission
+            # c.execute("""
+            #     INSERT INTO channels 
+            #     (added_by, channel_id, description, youtube_link, submission_date, adder)
+            #     VALUES (?, ?, ?, ?, ?, ?)
+            # """, (
+            #     user.id,
+            #     channel_id,
+            #     channel_name,
+            #     url,
+            #     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            #     ex,
+            # ))
             c.execute("""
-                INSERT INTO channels 
-                (user_id, channel_id, channel_name, url, submission_date, adder)
+                INSERT INTO links 
+                (added_by, youtube_link, description, channel_id, submission_date, adder)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 user.id,
-                channel_id,
-                channel_name,
                 url,
+                channel_name,
+                channel_id,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 ex,
             ))
+            c.execute("""
+                SELECT id 
+                FROM links 
+                WHERE added_by = ? and youtube_link = ? and description = ? and channel_id = ? and submission_date = ? and adder = ?
+            """, (
+                user.id,
+                url,
+                channel_name,
+                channel_id,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ex,
+            ))
+            exit = c.fetchone()
+            link_id_id = exit[0]
+            c.execute("""
+                INSERT OR REPLACE INTO user_link_status (telegram_id, link_id, processed)
+                VALUES (?, ?, 1)
+            """, (
+                user.id,
+                link_id_id
+            ))
             conn.commit()
-            
             await update.message.reply_text(
                 f"✅ Channel registered successfully!\n\n"
                 f"📛 Name: {channel_name}\n"
@@ -408,9 +440,9 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = sqlite3.connect(DATABASE_NAME)
         c = conn.cursor()
         c.execute("""
-            SELECT channel_name, url,channel_id, submission_date 
-            FROM channels 
-            WHERE user_id = ?
+            SELECT description, youtube_link,channel_id, submission_date 
+            FROM links 
+            WHERE added_by = ?
         """, (user.id,))
         channels = c.fetchall()
         conn.close()
@@ -567,7 +599,7 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect(DATABASE_NAME)
     try:
         c = conn.cursor()
-        c.execute("SELECT channel_name FROM channels WHERE url = ? and user_id = ?", (url,update.effective_user.id,))
+        c.execute("SELECT description FROM links WHERE youtube_link = ? and added_by = ?", (url,update.effective_user.id,))
         result = c.fetchone()
         
         if not result:
@@ -575,7 +607,7 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
             
         channel_name = result[0]
-        c.execute("DELETE FROM channels WHERE url = ? and user_id = ?", (url,update.effective_user.id,))
+        c.execute("DELETE FROM links WHERE youtube_link = ? and added_by = ?", (url,update.effective_user.id,))
         c.execute("DELETE FROM likes WHERE url = ? and user_id = ?", (url,update.effective_user.id,))
         conn.commit()
         await update.message.reply_text(
@@ -620,14 +652,14 @@ async def confirm_delete_admin(update: Update, context: ContextTypes.DEFAULT_TYP
     conn = sqlite3.connect(DATABASE_NAME)
     try:
         c = conn.cursor()
-        c.execute("SELECT channel_name FROM channels WHERE url = ? and adder = ?", (url, adder))
+        c.execute("SELECT channel_name FROM links WHERE youtube_link = ? and adder = ?", (url, adder))
         result = c.fetchone()
         if not result:
             await update.message.reply_text("❌ Channel not found")
             return ConversationHandler.END
             
         channel_name = result[0]
-        c.execute("DELETE FROM channels WHERE url = ? and adder = ?", (url, adder))
+        c.execute("DELETE FROM links WHERE youtube_link = ? and adder = ?", (url, adder))
         conn.commit()
         await update.message.reply_text(
             f"✅ Channel deleted:\n"

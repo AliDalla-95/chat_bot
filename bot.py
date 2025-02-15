@@ -281,6 +281,7 @@ def process_image_upload(message):
         return
 
     link_id, required_channel = pending_submissions[telegram_id]
+    print(f"{required_channel}")
     photo = message.photo[-1]  # Highest resolution image
     file_info = bot.get_file(photo.file_id)
     downloaded_file = bot.download_file(file_info.file_path)
@@ -289,8 +290,9 @@ def process_image_upload(message):
         f.write(downloaded_file)
 
     bot.reply_to(message, "🔍 Checking image")
+    print(f"{image_path}")
     result = ocr_processor.check_text_in_image(image_path, required_channel)
-
+    # print(f"{result}")
     if result:
         mark_link_processed(telegram_id, link_id)
         update_user_points(telegram_id, 1)
