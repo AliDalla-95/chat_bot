@@ -290,9 +290,9 @@ def process_image_upload(message):
         f.write(downloaded_file)
 
     bot.reply_to(message, "🔍 Checking image")
-    print(f"{image_path}")
+    # print(f"{image_path}")
     result = ocr_processor.check_text_in_image(image_path, required_channel)
-    print(f"{result}")
+    # print(f"{result}")
     if result:
         mark_link_processed(telegram_id, link_id)
         update_user_points(telegram_id, 1)
