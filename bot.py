@@ -244,20 +244,24 @@ def handle_submit_callback(call):
     Stores the pending link id and its description, then prompts for image upload.
     """
     telegram_id = call.from_user.id
-    try:
-        link_id = int(call.data.split("_")[1])
-        description = get_link_description(link_id)
-        if not description:
-            bot.answer_callback_query(call.id, "❌ Error: Link description not found.")
+    allowd_submit = get_allowed_links(telegram_id)
+    if allowd_submit:
+        try:
+            link_id = int(call.data.split("_")[1])
+            description = get_link_description(link_id)
+            if not description:
+                bot.answer_callback_query(call.id, "❌ Error: Link description not found.")
+                return
+        except (IndexError, ValueError):
+            bot.answer_callback_query(call.id, "❌ Invalid link data.")
             return
-    except (IndexError, ValueError):
-        bot.answer_callback_query(call.id, "❌ Invalid link data.")
-        return
 
-    pending_submissions[telegram_id] = (link_id, description)
-    bot.answer_callback_query(call.id, "✅ Please upload your image for this link.")
-    bot.send_message(call.message.chat.id, "📸 Upload an image now.")
-
+        pending_submissions[telegram_id] = (link_id, description)
+        bot.answer_callback_query(call.id, "✅ Please upload your image for this link.")
+        bot.send_message(call.message.chat.id, "📸 Upload an image now.")
+    else:
+        bot.send_message(call.message.chat.id, "📸 Not Allowed To Upload an image now.")
+        
 @bot.callback_query_handler(func=lambda call: call.data.startswith("prev_") or call.data.startswith("next_"))
 def navigate_links(call):
     """Handles pagination button clicks."""
@@ -281,7 +285,7 @@ def process_image_upload(message):
         return
 
     link_id, required_channel = pending_submissions[telegram_id]
-    print(f"{required_channel}")
+    # print(f"{required_channel}")
     photo = message.photo[-1]  # Highest resolution image
     file_info = bot.get_file(photo.file_id)
     downloaded_file = bot.download_file(file_info.file_path)
