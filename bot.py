@@ -334,7 +334,9 @@ def send_links_page(chat_id, user_id, page):
         return
     for link in links:
         link_id, youtube_link, description = link
-        text = f"📌 **YouTube Link:** {youtube_link}\n📜 **Description:** {description}"
+        safe_youtube_link = escape_markdown(youtube_link)
+        safe_description = escape_markdown(description)
+        text = f"📌 *YouTube Link:* {safe_youtube_link}\n📜 *Description:* {safe_description}"
         markup = types.InlineKeyboardMarkup()
         submit_btn = types.InlineKeyboardButton("📸 Submit Image", callback_data=f"submit_{link_id}")
         markup.add(submit_btn)
@@ -348,6 +350,15 @@ def send_links_page(chat_id, user_id, page):
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("➡️", callback_data=f"next_{page+1}"))
             bot.send_message(chat_id, "Next Page:", parse_mode="Markdown", reply_markup=markup)
+
+
+
+def escape_markdown(text: str) -> str:
+    # List of characters that need to be escaped in Markdown v1
+    escape_chars = r'\_*[]()~`>#+-=|{}!'
+    for char in escape_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
 
 ##########################
 #  AUTHORIZATION CHECK   #

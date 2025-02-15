@@ -605,9 +605,16 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not result:
             await update.message.reply_text("❌ Channel not found")
             return ConversationHandler.END
-            
+
         channel_name = result[0]
+        c.execute("SELECT id FROM links WHERE youtube_link = ? and added_by = ?", (url, update.effective_user.id,))
+        result_id = c.fetchone()
+        if not result_id:
+            await update.message.reply_text("❌ Channel not found")
+            return ConversationHandler.END
+        result_id_for_link = result_id[0]
         c.execute("DELETE FROM links WHERE youtube_link = ? and added_by = ?", (url,update.effective_user.id,))
+        c.execute("DELETE FROM user_link_status WHERE link_id = ?", (result_id_for_link,))
         c.execute("DELETE FROM likes WHERE url = ? and user_id = ?", (url,update.effective_user.id,))
         conn.commit()
         await update.message.reply_text(
@@ -652,13 +659,21 @@ async def confirm_delete_admin(update: Update, context: ContextTypes.DEFAULT_TYP
     conn = sqlite3.connect(DATABASE_NAME)
     try:
         c = conn.cursor()
-        c.execute("SELECT channel_name FROM links WHERE youtube_link = ? and adder = ?", (url, adder))
+        c.execute("SELECT description FROM links WHERE youtube_link = ? and adder = ?", (url, adder))
         result = c.fetchone()
         if not result:
             await update.message.reply_text("❌ Channel not found")
             return ConversationHandler.END
             
         channel_name = result[0]
+        c.execute("SELECT id FROM links WHERE youtube_link = ? and adder = ?", (url, adder,))
+        result_id = c.fetchone()
+        if not result_id:
+            await update.message.reply_text("❌ Channel not found")
+            return ConversationHandler.END
+        result_id_for_link = result_id[0]
+        c.execute("DELETE FROM user_link_status WHERE link_id = ?", (result_id_for_link,))
+        c.execute("DELETE FROM likes WHERE url = ? and adder = ?", (url,adder,))
         c.execute("DELETE FROM links WHERE youtube_link = ? and adder = ?", (url, adder))
         conn.commit()
         await update.message.reply_text(
