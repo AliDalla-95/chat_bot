@@ -5,6 +5,7 @@ import os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import re
+import concurrent.futures
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -113,11 +114,26 @@ def check_text_in_image(image_path, chosen_words):
     ocr_processor = FreeOCRProcessor()
     ocr_text = ""
     
-    for lang in ["eng", "ara", "rus"]:  # Check all three languages
-        text = ocr_processor.process_image(image_path, lang)
+    # # before add counter for online or offline
+    # for lang in ["eng", "ara", "rus"]:  # Check all three languages
+    #     text = ocr_processor.process_image(image_path, lang)
+    #     if text:
+    #         ocr_text += " " + text  # Combine results from all languages
+
+    #After add counter for online or offline
+    # Try OCR in several languages
+    for lang in ["eng", "ara", "rus"]:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(ocr_processor.process_image, image_path, lang)
+            try:
+                text = future.result(timeout=12)  # Wait for up to 12 seconds
+            except concurrent.futures.TimeoutError:
+                logger.warning("OCR timed out after 12 seconds for language %s", lang)
+                return False
+
         if text:
             ocr_text += " " + text  # Combine results from all languages
-            
+
     if not ocr_text:
         return False
     # print(f"{ocr_text}")

@@ -292,13 +292,19 @@ def process_image_upload(message):
     bot.reply_to(message, "🔍 Checking image")
     print(f"{image_path}")
     result = ocr_processor.check_text_in_image(image_path, required_channel)
-    # print(f"{result}")
+    print(f"{result}")
     if result:
         mark_link_processed(telegram_id, link_id)
         update_user_points(telegram_id, 1)
         bot.reply_to(message, "✅ Image verified successfully! You earned 1 point.\n🚫 This link is now blocked for you.\nPerfect Go\nUse /viewlinks to continue.")
     else:
-        bot.reply_to(message, "❌ Image verification failed.\nSorry, try again. Use /viewlinks to continue.")
+        result = image_processing.check_text_in_image(image_path, required_channel)
+        if result:
+            mark_link_processed(telegram_id, link_id)
+            update_user_points(telegram_id, 1)
+            bot.reply_to(message, "✅ Image verified successfully! You earned 1 point.\n🚫 This link is now blocked for you.\nPerfect Go\nUse /viewlinks to continue.")
+        else:
+            bot.reply_to(message, "❌ Image verification failed.\nSorry, try again. Use /viewlinks to continue.")
 
     if os.path.exists(image_path):
         os.remove(image_path)
