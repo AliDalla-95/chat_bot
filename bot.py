@@ -58,7 +58,7 @@ def start(message):
         ]
         bot.set_my_commands(user_commands, scope=types.BotCommandScopeChat(message.chat.id))
         bot.reply_to(message, "Welcome to the YouTube Points Bot!\nUse Menu to start.")
-        show_menu(message)
+    show_menu(message)
 @bot.message_handler(commands=['register'])
 def register(message):
     """Handle /register command."""
@@ -129,7 +129,7 @@ def handle_text_commands(message):
 ##########################
 def connect_db():
     """Returns a connection to the SQLite database."""
-    return sqlite3.connect('bot.db')  # Adjust the path as needed
+    return sqlite3.connect('bot_base.db')  # Adjust the path as needed
 
 def user_exists(telegram_id):
     """Check if the user already exists in the database."""
@@ -190,13 +190,8 @@ def get_allowed_links(telegram_id):
     with connect_db() as conn:
         cursor = conn.cursor()
         query = """
-            # SELECT l.id, l.youtube_link, l.description
-            # FROM links l
-            # LEFT JOIN user_link_status uls 
-            #     ON l.id = uls.link_id AND uls.telegram_id = ?
-            # WHERE uls.processed IS NULL OR uls.processed = 0
-            SELECT l.id, l.channel_id, l.channel_name
-            FROM likes l
+            SELECT l.id, l.youtube_link, l.description
+            FROM links l
             LEFT JOIN user_link_status uls 
                 ON l.id = uls.link_id AND uls.telegram_id = ?
             WHERE uls.processed IS NULL OR uls.processed = 0

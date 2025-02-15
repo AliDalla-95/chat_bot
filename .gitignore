@@ -1246,9 +1246,9 @@ buildNumber.properties
 # https://github.com/takari/maven-wrapper#usage-without-binary-jar
 .mvn/wrapper/maven-wrapper.jar
 
-config.py
-config
-.config
-.config.py
-database.db
-database
+# config.py
+# config
+# .config
+# .config.py
+# database.db
+# database

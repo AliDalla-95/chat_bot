@@ -1,7 +1,7 @@
 """ ali """
 import sqlite3
 
-DB_PATH = "database.db"
+DB_PATH = "bot_base.db"
 
 def connect_db():
     """ ali """

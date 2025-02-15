@@ -26,7 +26,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="googleapiclient.
 TELEGRAM_TOKEN = "7861338140:AAG3w1f7UBcwKpdYh0ipfLB3nMZM3sLasP4"
 YOUTUBE_API_KEY = "AIzaSyCH0lUUlI-u1ziHsHiSl8aTC2J0nFU2l2Q"
 ADMIN_TELEGRAM_ID = "6106281772"  # Get this from @userinfobot
-DATABASE_NAME = "bot.db"
+DATABASE_NAME = "bot_base.db"
 
 # Configure logging
 logging.basicConfig(
