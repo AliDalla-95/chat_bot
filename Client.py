@@ -329,8 +329,8 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             #     return exit_name
             # Insert new submission
             # c.execute("""
-            #     INSERT INTO channels 
-            #     (added_by, channel_id, description, youtube_link, submission_date, adder)
+            #     INSERT INTO likes 
+            #     (adder, channel_id, channel_name, url, submission_date, adder)
             #     VALUES (?, ?, ?, ?, ?, ?)
             # """, (
             #     user.id,
