@@ -352,28 +352,29 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 ex,
             ))
-            c.execute("""
-                SELECT id 
-                FROM links 
-                WHERE added_by = ? and youtube_link = ? and description = ? and channel_id = ? and submission_date = ? and adder = ?
-            """, (
-                user.id,
-                url,
-                channel_name,
-                channel_id,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                ex,
-            ))
-            exit = c.fetchone()
-            link_id_id = exit[0]
-            c.execute("""
-                INSERT OR REPLACE INTO user_link_status (telegram_id, link_id, processed)
-                VALUES (?, ?, 1)
-            """, (
-                user.id,
-                link_id_id
-            ))
-            conn.commit()
+            # add to link_status
+            # c.execute("""
+            #     SELECT id 
+            #     FROM links 
+            #     WHERE added_by = ? and youtube_link = ? and description = ? and channel_id = ? and submission_date = ? and adder = ?
+            # """, (
+            #     user.id,
+            #     url,
+            #     channel_name,
+            #     channel_id,
+            #     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            #     ex,
+            # ))
+            # exit = c.fetchone()
+            # link_id_id = exit[0]
+            # c.execute("""
+            #     INSERT OR REPLACE INTO user_link_status (telegram_id, link_id, processed)
+            #     VALUES (?, ?, 1)
+            # """, (
+            #     user.id,
+            #     link_id_id
+            # ))
+            # conn.commit()
             await update.message.reply_text(
                 f"✅ Channel registered successfully!\n\n"
                 f"📛 Name: {channel_name}\n"
