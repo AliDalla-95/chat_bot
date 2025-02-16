@@ -107,10 +107,6 @@ def check_text_in_image(image_path, chosen_words):
     :param chosen_words: A string (for one word) or a list of words to check.
     :return: True if all chosen words are found in the OCR text, False otherwise.
     """
-    # Run OCR on the image
-    # ocr_processor = FreeOCRProcessor()
-    # ocr_text = ocr_processor.process_image(image_path)
-    # If OCR fails, return False
     ocr_processor = FreeOCRProcessor()
     ocr_text = ""
     
@@ -123,6 +119,7 @@ def check_text_in_image(image_path, chosen_words):
     #After add counter for online or offline
     # Try OCR in several languages
     for lang in ["eng", "ara", "rus"]:
+                                #ProcessPoolExecutor
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(ocr_processor.process_image, image_path, lang)
             try:
@@ -130,24 +127,17 @@ def check_text_in_image(image_path, chosen_words):
             except concurrent.futures.TimeoutError:
                 logger.warning("OCR timed out after 12 seconds for language %s", lang)
                 return False
-
+            # except Exception as e:
+            #     logger.error("OCR processing error for language %s: %s", lang, e)
+            #     return False
         if text:
             ocr_text += " " + text  # Combine results from all languages
 
     if not ocr_text:
         return False
-    # print(f"{ocr_text}")
-    # Ensure chosen_words is a list
     if isinstance(chosen_words, str):
         chosen_words = [chosen_words]
 
-    # Option 1: Using simple substring search (case-insensitive)
-    # if all(word.lower() in ocr_text.lower() for word in chosen_words):
-    #     return True
-    # else:
-    #     return False
-    # Option 2: Using regular expressions for whole-word matching
-    # print(f"chosen_words: {chosen_words}")
     for word in chosen_words:
         pattern = r'\b' + re.escape(word) + r'\b'
         # print(f"word:{word}")
@@ -159,32 +149,3 @@ def check_text_in_image(image_path, chosen_words):
         return False
     
     return True    
-# if __name__ == "__main__":
-#     pass
-
-
-
-
-
-    # ===== FOLDER MONITORING CODE =====
-    # Keep this for automatic processing
-    # WATCH_FOLDER = "./watch_folder"
-    # OUTPUT_FOLDER = "./outputs"
-    
-    # os.makedirs(WATCH_FOLDER, exist_ok=True)
-    # os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-
-    # processor = FreeOCRProcessor()
-    # event_handler = OCRHandler(processor)
-    # observer = Observer()
-    # observer.schedule(event_handler, path=WATCH_FOLDER, recursive=False)
-    # observer.start()
-
-    # try:
-    #     logger.info(f"Monitoring folder: {os.path.abspath(WATCH_FOLDER)}")
-    #     logger.info(f"Output folder: {os.path.abspath(OUTPUT_FOLDER)}")
-    #     while True:
-    #         time.sleep(1)
-    # except KeyboardInterrupt:
-    #     observer.stop()
-    # observer.join()
