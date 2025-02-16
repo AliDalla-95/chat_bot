@@ -225,13 +225,6 @@ def update_user_points(telegram_id, points=1):
             WHERE telegram_id = ?
         """, (points, telegram_id))
         conn.commit()
-    # with connect_db() as conn:
-    #     cursor = conn.cursor()
-    #     cursor.execute("""
-    #         INSERT OR REPLACE INTO user_likes (telegram_id, link_id, processed)
-    #         VALUES (?, ?, 1)
-    #     """, (points, telegram_id))
-    #     conn.commit()
 
 def get_link_description(link_id):
     """Fetches the description for a given link ID."""
@@ -340,6 +333,13 @@ def process_image_upload(message: types.Message) -> None:
             if ocr_processor.check_text_in_image(image_path, description):
                 mark_link_processed(user_id, link_id)
                 update_user_points(user_id,)
+                with connect_db() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                    UPDATE likes SET channel_likes = channel_likes + ?
+                    WHERE id = ?
+                    """, (1,link_id))
+                    conn.commit()
                 response = "✅ Verification successful! +1 point"
             else:
                 response = "❌ Verification failed. Try again."

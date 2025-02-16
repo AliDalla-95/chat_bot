@@ -201,7 +201,6 @@ def get_allowed_links(telegram_id):
 
 def mark_link_processed(telegram_id, link_id):
     """Marks the given link as processed for the user."""
-    print(f"status")
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -212,7 +211,6 @@ def mark_link_processed(telegram_id, link_id):
 
 def update_user_points(telegram_id, points=1):
     """Updates the user's points in the users table."""
-    print(f"points")
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -295,7 +293,6 @@ def process_image_upload(message):
     if result:
         mark_link_processed(telegram_id, link_id)
         update_user_points(telegram_id, 1)
-        print(f"{link_id}")
         with connect_db() as conn:
             cursor = conn.cursor()
             cursor.execute("""
