@@ -201,6 +201,7 @@ def get_allowed_links(telegram_id):
 
 def mark_link_processed(telegram_id, link_id):
     """Marks the given link as processed for the user."""
+    print(f"status")
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -209,8 +210,9 @@ def mark_link_processed(telegram_id, link_id):
         """, (telegram_id, link_id))
         conn.commit()
 
-def update_user_points(telegram_id, url, points=1):
+def update_user_points(telegram_id, points=1):
     """Updates the user's points in the users table."""
+    print(f"points")
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -218,13 +220,6 @@ def update_user_points(telegram_id, url, points=1):
             WHERE telegram_id = ?
         """, (points, telegram_id))
         conn.commit()
-    # with connect_db() as conn:
-    #     cursor = conn.cursor()
-    #     cursor.execute("""
-    #         INSERT OR REPLACE INTO user_likes (telegram_id, link_id, processed)
-    #         VALUES (?, ?, 1)
-    #     """, (points, telegram_id))
-    #     conn.commit()
 
 def get_link_description(link_id):
     """Fetches the description for a given link ID."""
@@ -300,12 +295,27 @@ def process_image_upload(message):
     if result:
         mark_link_processed(telegram_id, link_id)
         update_user_points(telegram_id, 1)
-        bot.reply_to(message, "✅ Image verified successfully! You earned 1 point.\n🚫 This link is now blocked for you.\nPerfect Go\nUse /viewlinks to continue.")
+        print(f"{link_id}")
+        with connect_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+            UPDATE likes SET channel_likes = channel_likes + ?
+            WHERE id = ?
+            """, (1,link_id))
+            conn.commit()
+        bot.reply_to(message, "✅ Image verified successfully! You earned +1 point.\n🚫 This link is now blocked for you.\nPerfect Go\nUse /viewlinks to continue.")
     else:
         result = image_processing.check_text_in_image(image_path, required_channel)
         if result:
             mark_link_processed(telegram_id, link_id)
             update_user_points(telegram_id, 1)
+            with connect_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                UPDATE likes SET channel_likes = channel_likes + ?
+                WHERE channel_id = ?
+                """, (1,link_id))
+                conn.commit()
             bot.reply_to(message, "✅ Image verified successfully! You earned 1 point.\n🚫 This link is now blocked for you.\nPerfect Go\nUse /viewlinks to continue.")
         else:
             bot.reply_to(message, "❌ Image verification failed.\nSorry, try again. Use /viewlinks to continue.")
