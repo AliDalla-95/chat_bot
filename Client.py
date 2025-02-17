@@ -125,6 +125,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ))
         conn.commit()
         conn.close()
+        await update.message.reply_text(f"👋 Welcome {user.first_name}!",
+        reply_markup=get_menu(user.id))
+        return
     
     await update.message.reply_text(
         f"👋 Welcome {user.first_name}!",
@@ -161,6 +164,9 @@ async def show_main_menu(update: Update, user):
 async def handle_registration(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start registration process"""
     user = update.effective_user
+    if await is_banned(user.id):
+        await update.message.reply_text("🚫 Your access has been revoked")
+        return ConversationHandler.END
     if await is_registered(user.id):
         await update.message.reply_text("ℹ️ You're already registered!")
         return
@@ -403,7 +409,13 @@ def filter_non_arabic_words(text, url):
 async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List all submitted channels for a user"""
     user = update.effective_user
+    if await is_banned(user.id):
+        await update.message.reply_text("🚫 Your access has been revoked")
+        return ConversationHandler.END
     try:
+        if not await is_registered(user.id):
+            await update.message.reply_text("❌ Please Register First.")
+            return
         conn = get_conn()
         c = conn.cursor()
         c.execute("""
@@ -429,11 +441,10 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
         await update.message.reply_text("\n\n".join(response))
-        
+
     except Exception as e:
         logger.error(f"List channels error: {str(e)}")
         await update.message.reply_text("❌ Error retrieving your channels")
-
 
 # ========== REGISTRATION FLOW HANDLERS ==========
 async def email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -505,8 +516,11 @@ async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # ========== ADMIN FUNCTIONALITY ==========
 async def handle_channel_verification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start channel verification process"""
+    if await is_banned(update.effective_user.id):
+        await update.message.reply_text("🚫 Your access has been revoked")
+        return ConversationHandler.END
     if not await is_registered(update.effective_user.id):
-        await update.message.reply_text("❌ Please register first using /register")
+        await update.message.reply_text("❌ Please Register First.")
         return ConversationHandler.END
     
     await update.message.reply_text("🔗 Please send your YouTube channel URL:")
@@ -521,8 +535,10 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     keyboard = [
         # ["📊 User Statistics", "📢 Broadcast Message"],
-        ["🚫 Ban User", "🗑 Delete Channel"],  # Updated buttons
-        ["🔙 Main Menu","🗑 Delete  ALL Channel"]
+        
+        ["🚫 Ban User", "✅ UnBan User"],
+        ["🗑 Delete Channel", "🗑 Delete  ALL Channelr"], # Updated buttons
+        ["🔙 Main Menu"]
     ]
     await update.message.reply_text(
         "👑 Admin Panel:",
@@ -544,6 +560,12 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # ========== ADMIN DELETE CHANNELS ==========
 async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin-only channel deletion flow"""
+    if await is_banned(update.effective_user.id):
+        await update.message.reply_text("🚫 Your access has been revoked")
+        return ConversationHandler.END
+    if not await is_registered(update.effective_user.id):
+        await update.message.reply_text("❌ Please Register First.")
+        return ConversationHandler.END
     # user = update.effective_user
     # if str(user.id) != ADMIN_TELEGRAM_ID:
     #     await update.message.reply_text("🚫 Access denied!")
@@ -645,8 +667,65 @@ async def confirm_delete_admin(update: Update, context: ContextTypes.DEFAULT_TYP
         conn.close()
 
     return ConversationHandler.END
+async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin = update.effective_user
+    if str(admin.id) != ADMIN_TELEGRAM_ID:
+        await update.message.reply_text("🚫 Access denied!")
+        return
 
+    if context.args:
+        target_fullname = " ".join(context.args).strip()
+    else:
+        await update.message.reply_text("Usage: /unban <full name>")
+        return
 
+    conn = get_conn()
+    try:
+        c = conn.cursor()
+        c.execute("""
+            UPDATE clients 
+            SET is_banned = False 
+            WHERE fullname = %s
+        """, (target_fullname,))
+        
+        if c.rowcount == 0:
+            await update.message.reply_text("❌ User not found in database")
+            return
+            
+        conn.commit()
+        await update.message.reply_text(f"✅ User '{target_fullname}' has been unbanned")
+        
+        c.execute("""
+            SELECT telegram_id FROM clients
+            WHERE fullname = %s
+        """, (target_fullname,))
+        user_data = c.fetchone()
+        if user_data and user_data[0]:
+            try:
+                await context.bot.send_message(
+                    chat_id=user_data[0],
+                    text="✅ Your access to this bot has been restored"
+                )
+            except Exception as e:
+                logger.error(f"Unban notification failed: {str(e)}")
+            
+    finally:
+        conn.close()
+
+async def is_banned(telegram_id: int) -> bool:
+    """Check if user is banned with DB connection handling"""
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT is_banned FROM clients WHERE telegram_id = %s", (telegram_id,))
+        result = c.fetchone()
+        return bool(result and result[0] == 1)
+    except sqlite3.Error as e:
+        logger.error(f"Ban check failed: {str(e)}")
+        return False
+    finally:
+        conn.close()
+                
 # ========== BAN USER FUNCTIONALITY ==========
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ban a user from using the bot"""
@@ -656,17 +735,17 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Extract user ID from message (could be reply or direct input)
-    target_id = None
-    if update.message.reply_to_message:
-        target_id = update.message.reply_to_message.from_user.id
-    elif context.args and len(context.args) > 0:
+    # target = None
+    # if update.message.reply_to_message:
+    #     target = update.message.reply_to_message.from_user.strip()
+    if context.args:
         try:
-            target_id = int(context.args[0])
+            target = " ".join(context.args).strip()
         except ValueError:
-            await update.message.reply_text("Usage: /ban <user_id> or reply to user's message")
+            await update.message.reply_text("Usage: /ban <fullname> or reply to user's message")
             return
     else:
-        await update.message.reply_text("Usage: /ban <user_id> or reply to user's message")
+        await update.message.reply_text("Usage: /ban <fullname> or reply to user's message")
         return
 
     conn = get_conn()
@@ -676,24 +755,29 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         c.execute("""
             UPDATE clients 
             SET is_banned = True 
-            WHERE telegram_id = %s
-        """, (target_id,))
+            WHERE fullname = %s
+        """, (target,))
         
         if c.rowcount == 0:
             await update.message.reply_text("❌ User not found in database")
             return
             
         conn.commit()
-        await update.message.reply_text(f"✅ User {target_id} has been banned")
+        await update.message.reply_text(f"✅ User {target} has been banned")
         
         # Notify banned user if possible
-        try:
+        c.execute("""
+            SELECT telegram_id FROM clients
+            WHERE fullname = %s
+        """, (target,))
+        user_data = c.fetchone()
+        if user_data and user_data[0]:
             await context.bot.send_message(
-                chat_id=target_id,
+                chat_id=user_data[0],
                 text="🚫 Your access to this bot has been revoked"
             )
-        except Exception as e:
-            logger.error(f"Ban notification failed: {str(e)}")
+    except Exception as e:
+        logger.error(f"Ban notification failed: {str(e)}")
             
     finally:
         conn.close()
@@ -743,7 +827,8 @@ def main() -> None:
             entry_points=[
                 MessageHandler(filters.Regex(r"^🗑 Delete Channel"), delete_channel),
                 MessageHandler(filters.Regex(r"^🗑 Delete  ALL Channel$"), delete_channel_admin),
-                MessageHandler(filters.Regex(r"^🚫 Ban User$"), ban_user)
+                MessageHandler(filters.Regex(r"^🚫 Ban User$"), ban_user),
+                MessageHandler(filters.Regex(r"^✅ UnBan User$"), unban_user)
             ],
             states={
                 "AWAIT_CHANNEL_URL": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)],
@@ -780,6 +865,7 @@ def main() -> None:
             MessageHandler(filters.Regex(r"^👑 Admin Panel$"), handle_admin_panel),
             MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler),
             CommandHandler("ban", ban_user),
+            CommandHandler("unban", unban_user),
             CommandHandler("mychannels", list_channels)
         ]
 
