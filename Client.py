@@ -20,13 +20,16 @@ import cachetools
 from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
 import warnings
+import psycopg2
+from psycopg2 import pool
+from psycopg2 import errors
 
 warnings.filterwarnings("ignore", category=UserWarning, module="googleapiclient.discovery_cache")
 # ========== CONFIGURATION ==========admin
 TELEGRAM_TOKEN = "7861338140:AAG3w1f7UBcwKpdYh0ipfLB3nMZM3sLasP4"
 YOUTUBE_API_KEY = "AIzaSyCH0lUUlI-u1ziHsHiSl8aTC2J0nFU2l2Q"
 ADMIN_TELEGRAM_ID = "6106281772"  # Get this from @userinfobot
-DATABASE_NAME = "bot_base.db"
+DATABASE_NAME = "Test.db"
 
 # Configure logging
 logging.basicConfig(
@@ -58,95 +61,59 @@ ADMIN_MENU = [
     ["📋 My Channels","🗑 Delete Channel"]  # Added for admin too
 ]
 
+
+# Database configuration
+POSTGRES_CONFIG = {
+    "user": "postgres",
+    "password": "postgres",
+    "host": "localhost",
+    "port": "5432",
+    "database": "Test"
+}
+
+# Create connection pool
+connection_pool = psycopg2.pool.SimpleConnectionPool(
+    minconn=1,
+    maxconn=1000,
+    **POSTGRES_CONFIG
+)
+
+def get_conn():
+    return connection_pool.getconn()
+
+def put_conn(conn):
+    connection_pool.putconn(conn)
+
+
 def get_menu(user_id: int) -> ReplyKeyboardMarkup:
     """Return appropriate menu based on user status"""
     if str(user_id) == ADMIN_TELEGRAM_ID:
         return ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True)
     return ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
 
-# ========== DATABASE OPERATIONS ==========
-def init_db():
-    """Initialize database with proper schema"""
-    conn = sqlite3.connect(DATABASE_NAME)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS clients (
-            user_id INTEGER PRIMARY KEY,
-            telegram_id INTEGER UNIQUE,
-            email TEXT,
-            phone TEXT,
-            fullname TEXT,
-            country TEXT,
-            registration_date TEXT,
-            is_admin BOOLEAN DEFAULT 0,
-            is_banned BOOLEAN DEFAULT 0
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS channels (
-            user_id INTEGER,
-            adder TEXT,
-            channel_id TEXT,
-            channel_name TEXT,
-            url TEXT,
-            submission_date TEXT,
-            PRIMARY KEY (user_id, channel_id),
-            FOREIGN KEY (user_id) REFERENCES clients(telegram_id),
-            FOREIGN KEY (user_id,url) REFERENCES likes(user_id,url) 
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS "user_likes" (
-            "user_id"	INTEGER,
-            "fullname"	TEXT,
-            "email"	TEXT,
-            "adder"	TEXT,
-            "url"	TEXT,
-            "channel_name"	TEXT,
-        	"submission_date"	TEXT,
-            "channel_likes"	INTEGER DEFAULT 1,
-            PRIMARY KEY("user_id")
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS likes (
-            "user_id"	INTEGER,
-            "channel_id"	TEXT,
-            "adder"	TEXT,
-            "url"	TEXT,
-            "channel_name"	TEXT,
-            "channel_likes"	INTEGER,
-            PRIMARY KEY("user_id","url")
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-init_db()
-
 async def is_registered(telegram_id: int) -> bool:
     """Check if user is registered"""
-    conn = sqlite3.connect(DATABASE_NAME)
-    c = conn.cursor()
-    c.execute("SELECT 1 FROM clients WHERE telegram_id = ?", (telegram_id,))
-    result = c.fetchone()
-    conn.close()
-    return bool(result)
+    conn = get_conn()
+    try:
+        with conn.cursor() as c:
+            c.execute("SELECT 1 FROM clients WHERE telegram_id = %s", (telegram_id,))
+            return bool(c.fetchone())
+    finally:
+        put_conn(conn)
 
 # ========== CORE BOT FUNCTIONALITY ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command with dynamic menu"""
     user = update.effective_user
     menu = get_menu(user.id)
-    
     # Auto-register admin if not in database
     if str(user.id) == ADMIN_TELEGRAM_ID and not await is_registered(user.id):
-        conn = sqlite3.connect(DATABASE_NAME)
+        conn = get_conn()
         c = conn.cursor()
         c.execute("""
             INSERT INTO clients 
             (telegram_id, email, phone, fullname, country, registration_date, is_admin)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (
             user.id,
             "admin@example.com",
@@ -154,7 +121,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "Admin User",
             "Adminland",
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            1
+            True
         ))
         conn.commit()
         conn.close()
@@ -285,15 +252,15 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             return ConversationHandler.END
 
         # Database checks
-        conn = sqlite3.connect(DATABASE_NAME)
+        conn = get_conn()
         try:
             c = conn.cursor()
             # Check existing submissions
             c.execute("""
                 SELECT channel_id, description 
                 FROM links 
-                WHERE added_by = ? 
-                AND (channel_id = ? OR description = ?)
+                WHERE added_by = %s 
+                AND (channel_id = %s OR description = %s)
             """, (user.id, channel_id, channel_name))
             
             existing = c.fetchone()
@@ -313,7 +280,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
                 cc.execute("""
                     SELECT fullname 
                     FROM clients 
-                    WHERE telegram_id = ?
+                    WHERE telegram_id = %s
                 """, (
                     user.id,
                 ))
@@ -331,7 +298,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             # c.execute("""
             #     INSERT INTO likes 
             #     (adder, channel_id, channel_name, url, submission_date, adder)
-            #     VALUES (?, ?, ?, ?, ?, ?)
+            #     VALUES (%s, %s, %s, %s, %s, %s)
             # """, (
             #     user.id,
             #     channel_id,
@@ -342,8 +309,8 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             # ))
             c.execute("""
                 INSERT INTO links 
-                (added_by, youtube_link, description, channel_id, submission_date, adder)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (added_by, youtube_link, description, channel_id, submission_date, adder) OVERRIDING SYSTEM VALUE
+                VALUES (%s, %s, %s, %s, %s, %s)
             """, (
                 user.id,
                 url,
@@ -355,7 +322,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             # c.execute("""
             #     SELECT id 
             #     FROM links 
-            #     WHERE added_by = ? and youtube_link = ? and description = ? and channel_id = ? and submission_date = ? and adder = ?
+            #     WHERE added_by = %s and youtube_link = %s and description = %s and channel_id = %s and submission_date = %s and adder = %s
             # """, (
             #     user.id,
             #     url,
@@ -368,7 +335,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             # link_id_id = exit[0]
             # c.execute("""
             #     INSERT OR REPLACE INTO user_link_status (telegram_id, link_id, processed)
-            #     VALUES (?, ?, 1)
+            #     VALUES (%s, %s, 1)
             # """, (
             #     user.id,
             #     link_id_id
@@ -437,12 +404,12 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List all submitted channels for a user"""
     user = update.effective_user
     try:
-        conn = sqlite3.connect(DATABASE_NAME)
+        conn = get_conn()
         c = conn.cursor()
         c.execute("""
             SELECT description, youtube_link,channel_id, submission_date 
             FROM links 
-            WHERE added_by = ?
+            WHERE added_by = %s
         """, (user.id,))
         channels = c.fetchall()
         conn.close()
@@ -508,12 +475,12 @@ async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     user_data = context.user_data
     try:
-        conn = sqlite3.connect(DATABASE_NAME)
+        conn = get_conn()
         c = conn.cursor()
         c.execute("""
             INSERT INTO clients 
             (telegram_id, email, phone, fullname, country, registration_date)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """, (
             update.effective_user.id,
             user_data["email"],
@@ -564,22 +531,15 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # ========== IMPROVED ERROR HANDLING ==========
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log errors and handle different error types"""
+    """Handle PostgreSQL errors"""
     logger.error("Exception:", exc_info=context.error)
     
-    try:
-        # Handle cases where update might be None
-        if update and update.effective_message:
-            error_message = "⚠️ An error occurred. Please try again."
-            
-            # Handle specific error types
-            if isinstance(context.error, Conflict):
-                error_message = "🔌 Bot conflict detected! Please restart the bot."
-                
-            await update.effective_message.reply_text(error_message)
-            
-    except Exception as e:
-        logger.error(f"Error handler failed: {str(e)}")
+    if isinstance(context.error, errors.UniqueViolation):
+        await update.message.reply_text("❌ This entry already exists!")
+    elif isinstance(context.error, errors.ForeignKeyViolation):
+        await update.message.reply_text("❌ Invalid reference!")
+    else:
+        await update.message.reply_text("⚠️ An error occurred. Please try again.")
         
 # ========== ADMIN DELETE CHANNELS ==========
 async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -596,10 +556,10 @@ async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Confirm and delete channel"""
     url = update.message.text.strip()
-    conn = sqlite3.connect(DATABASE_NAME)
+    conn = get_conn()
     try:
         c = conn.cursor()
-        c.execute("SELECT description FROM links WHERE youtube_link = ? and added_by = ?", (url,update.effective_user.id,))
+        c.execute("SELECT description FROM links WHERE youtube_link = %s and added_by = %s", (url,update.effective_user.id,))
         result = c.fetchone()
         
         if not result:
@@ -607,15 +567,15 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
 
         channel_name = result[0]
-        c.execute("SELECT id FROM links WHERE youtube_link = ? and added_by = ?", (url, update.effective_user.id,))
+        c.execute("SELECT id FROM links WHERE youtube_link = %s and added_by = %s", (url, update.effective_user.id,))
         result_id = c.fetchone()
         if not result_id:
             await update.message.reply_text("❌ Channel not found")
             return ConversationHandler.END
         result_id_for_link = result_id[0]
-        c.execute("DELETE FROM links WHERE youtube_link = ? and added_by = ?", (url,update.effective_user.id,))
-        c.execute("DELETE FROM user_link_status WHERE link_id = ?", (result_id_for_link,))
-        c.execute("DELETE FROM likes WHERE url = ? and user_id = ?", (url,update.effective_user.id,))
+        c.execute("DELETE FROM links WHERE youtube_link = %s and added_by = %s", (url,update.effective_user.id,))
+        c.execute("DELETE FROM user_link_status WHERE link_id = %s", (result_id_for_link,))
+        c.execute("DELETE FROM likes WHERE url = %s and user_id = %s", (url,update.effective_user.id,))
         conn.commit()
         await update.message.reply_text(
             f"✅ Channel deleted:\n"
@@ -656,25 +616,25 @@ async def confirm_delete_admin(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("Channel URL not found. Aborting deletion.")
         return ConversationHandler.END
 
-    conn = sqlite3.connect(DATABASE_NAME)
+    conn = get_conn()
     try:
         c = conn.cursor()
-        c.execute("SELECT description FROM links WHERE youtube_link = ? and adder = ?", (url, adder))
+        c.execute("SELECT description FROM links WHERE youtube_link = %s and adder = %s", (url, adder))
         result = c.fetchone()
         if not result:
             await update.message.reply_text("❌ Channel not found")
             return ConversationHandler.END
             
         channel_name = result[0]
-        c.execute("SELECT id FROM links WHERE youtube_link = ? and adder = ?", (url, adder,))
+        c.execute("SELECT id FROM links WHERE youtube_link = %s and adder = %s", (url, adder,))
         result_id = c.fetchone()
         if not result_id:
             await update.message.reply_text("❌ Channel not found")
             return ConversationHandler.END
         result_id_for_link = result_id[0]
-        c.execute("DELETE FROM user_link_status WHERE link_id = ?", (result_id_for_link,))
-        c.execute("DELETE FROM likes WHERE url = ? and adder = ?", (url,adder,))
-        c.execute("DELETE FROM links WHERE youtube_link = ? and adder = ?", (url, adder))
+        c.execute("DELETE FROM user_link_status WHERE link_id = %s", (result_id_for_link,))
+        c.execute("DELETE FROM likes WHERE url = %s and adder = %s", (url,adder,))
+        c.execute("DELETE FROM links WHERE youtube_link = %s and adder = %s", (url, adder))
         conn.commit()
         await update.message.reply_text(
             f"✅ Channel deleted:\n"
@@ -709,14 +669,14 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /ban <user_id> or reply to user's message")
         return
 
-    conn = sqlite3.connect(DATABASE_NAME)
+    conn = get_conn()
     try:
         c = conn.cursor()
         # Ban user
         c.execute("""
             UPDATE clients 
-            SET is_banned = 1 
-            WHERE telegram_id = ?
+            SET is_banned = True 
+            WHERE telegram_id = %s
         """, (target_id,))
         
         if c.rowcount == 0:
@@ -827,9 +787,9 @@ def main() -> None:
         async def is_banned(telegram_id: int) -> bool:
             """Check if user is banned with DB connection handling"""
             try:
-                conn = sqlite3.connect(DATABASE_NAME)
+                conn = get_conn()
                 c = conn.cursor()
-                c.execute("SELECT is_banned FROM clients WHERE telegram_id = ?", (telegram_id,))
+                c.execute("SELECT is_banned FROM clients WHERE telegram_id = %s", (telegram_id,))
                 result = c.fetchone()
                 return bool(result and result[0] == 1)
             except sqlite3.Error as e:
