@@ -13,6 +13,8 @@ import logging
 import config
 import threading
 import logging
+import psycopg2
+
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -26,6 +28,12 @@ bot = telebot.TeleBot(config.TOKEN)
 pending_submissions = {}
 user_pages = {}
 processing_lock = threading.Lock()
+pending_registrations = {}
+
+
+def connect_db():
+    """Returns a connection to the PostgreSQL database."""
+    return psycopg2.connect(config.DATABASE_URL)
 ##########################
 #      SHOW MENU         #
 ##########################
@@ -57,14 +65,16 @@ def start(message):
             bot.reply_to(message, "Welcome, friend!\nUse Menu to see all commands.")
         else:
             bot.reply_to(message, "Welcome! \nUse Menu to see available commands.")
-    else:
-        # For new users, set commands and prompt registration.
+
+    elif not user_exists(message.from_user.id):
         user_commands = [
             types.BotCommand("start", "Start interacting with the bot"),
             types.BotCommand("register", "Register your account"),
         ]
         bot.set_my_commands(user_commands, scope=types.BotCommandScopeChat(message.chat.id))
         bot.reply_to(message, "Welcome to the YouTube Points Bot!\nUse Menu to start.")
+    else:
+        register(message)    
     show_menu(message)
 @bot.message_handler(commands=['register'])
 def register(message):
@@ -73,12 +83,59 @@ def register(message):
         if user_exists(message.from_user.id):
             bot.reply_to(message, "You are already registered!")
         else:
-            bot.send_message(message.chat.id,
-                             "Please enter your email, full name (comma-separated):")
-            bot.register_next_step_handler(message, save_registration)
+            msg = bot.send_message(message.chat.id, "Please enter your email:")
+            bot.register_next_step_handler(msg, process_email)
     except Exception as e:
         bot.reply_to(message, f"An error occurred: {e}")
+        
+def process_email(message):
+    """Process email input and ask for full name."""
+    try:
+        email = message.text.strip()
+        
+        # Simple email validation
+        if '@' not in email or '.' not in email:
+            raise ValueError("Invalid email format")
+            
+        # Store email temporarily
+        pending_registrations[message.from_user.id] = {'email': email}
+        
+        # Ask for full name
+        msg = bot.send_message(message.chat.id, "Please enter your full name:")
+        bot.register_next_step_handler(msg, process_full_name)
+        
+    except Exception as e:
+        bot.reply_to(message, f"Invalid email: {e}\nPlease try again with /register")
+        pending_registrations.pop(message.from_user.id, None)
 
+def process_full_name(message):
+    """Process full name input and complete registration."""
+    try:
+        user_id = message.from_user.id
+        full_name = message.text.strip()
+        
+        if not full_name:
+            raise ValueError("Full name cannot be empty")
+            
+        # Get stored email
+        user_data = pending_registrations.get(user_id)
+        if not user_data:
+            raise ValueError("Registration session expired")
+            
+        email = user_data['email']
+        
+        # Add to database
+        database.add_user(user_id, full_name, email)
+        
+        # Cleanup
+        pending_registrations.pop(user_id, None)
+        
+        bot.reply_to(message, "✅ Registration successful!\nWelcome to the YouTube Points Bot! Use /menu to start.")
+        
+    except Exception as e:
+        bot.reply_to(message, f"Registration failed: {e}\nPlease try again with /register")
+        pending_registrations.pop(message.from_user.id, None)
+        
 @bot.message_handler(commands=['profile'])
 def profile_command(message):
     """Handle /profile command."""
@@ -94,7 +151,7 @@ def profile_command(message):
         )
         bot.reply_to(message, profile_text)
     else:
-        bot.reply_to(message, "Profile not found. Please register using /register.")
+        bot.reply_to(message, "You are not registered. Please register using /register.")
 
 @bot.message_handler(commands=['viewlinks'])
 def view_links(message):
@@ -105,9 +162,9 @@ def view_links(message):
             user_pages[user_id] = 0  # Start from page 0
             send_links_page(message.chat.id, user_id, 0)
         else:
-            bot.reply_to(message, "Profile not found. Please register using /register.")
+            bot.reply_to(message, "You are not registered. Please register using /register.")
             bot.register_next_step_handler(message, register)
-    except Exception as e:
+    except psycopg2.Error as e:
         bot.reply_to(message, f"An error occurred: {e}")
 
 ##########################
@@ -134,38 +191,38 @@ def handle_text_commands(message):
 ##########################
 #    DATABASE FUNCTIONS  #
 ##########################
-def connect_db():
-    """Returns a connection to the SQLite database."""
-    return sqlite3.connect('bot_base.db')  # Adjust the path as needed
+# def connect_db():
+#     """Returns a connection to the SQLite database."""
+#     return sqlite3.connect('bot_base.db')  # Adjust the path as needed
 
 def user_exists(telegram_id):
     """Check if the user already exists in the database."""
     try:
         with connect_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
+            cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
             user = cursor.fetchone()
             return user is not None
-    except sqlite3.Error as e:
-        print(f"SQLite error occurred: {e}")
+    except psycopg2.Error as e:
+        print(f"Database error occurred: {e}")
         return False
 
-def save_registration(message):
-    try:
-        user_data = message.text.split(",")
-        email, full_name = map(str.strip, user_data)
-        database.add_user(message.from_user.id, full_name, email)
-        bot.reply_to(message, "Registration successful!\nWelcome to the YouTube Points Bot! Use /menu to start.")
-        bot.register_next_step_handler(message, start)
-    except:
-        bot.reply_to(message, "Invalid format! Use: email, full name /register")
+# def save_registration(message):
+#     try:
+#         user_data = message.text.split(",")
+#         email, full_name = map(str.strip, user_data)
+#         database.add_user(message.from_user.id, full_name, email)
+#         bot.reply_to(message, "Registration successful!\nWelcome to the YouTube Points Bot! Use /menu to start.")
+#         bot.register_next_step_handler(message, start)
+#     except:
+#         bot.reply_to(message, "Invalid format! Use: email, full name /register")
 
 def get_profile(telegram_id):
     """Retrieves a user’s profile data from the users table."""
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT telegram_id, full_name, email, points FROM users WHERE telegram_id = ?",
+            "SELECT telegram_id, full_name, email, points FROM users WHERE telegram_id = %s",
             (telegram_id,)
         )
         return cursor.fetchone()
@@ -175,18 +232,18 @@ def link_exists(link):
     try:
         with connect_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM links WHERE youtube_link = ?", (link,))
+            cursor.execute("SELECT * FROM links WHERE youtube_link = %s", (link,))
             user = cursor.fetchone()
             return user is not None
-    except sqlite3.Error as e:
-        print(f"SQLite error occurred: {e}")
+    except psycopg2.Error as e:
+        print(f"Database error occurred: {e}")
         return False
 
 def get_adder(user):
     """Get the full name of the user who added the link."""
     with connect_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT full_name FROM users WHERE telegram_id = ?", (user,))
+        cursor.execute("SELECT full_name FROM users WHERE telegram_id = %s", (user,))
         return cursor.fetchone()
 
 def get_allowed_links(telegram_id):
@@ -200,7 +257,7 @@ def get_allowed_links(telegram_id):
             SELECT l.id, l.youtube_link, l.description
             FROM links l
             LEFT JOIN user_link_status uls 
-                ON l.id = uls.link_id AND uls.telegram_id = ?
+                ON l.id = uls.link_id AND uls.telegram_id = %s
             WHERE uls.processed IS NULL OR uls.processed = 0
         """
         cursor.execute(query, (telegram_id,))
@@ -211,8 +268,10 @@ def mark_link_processed(telegram_id, link_id):
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT OR REPLACE INTO user_link_status (telegram_id, link_id, processed)
-            VALUES (?, ?, 1)
+            INSERT INTO user_link_status (telegram_id, link_id, processed)
+            VALUES (%s, %s, 1)
+            ON CONFLICT (telegram_id, link_id) 
+            DO UPDATE SET processed = EXCLUDED.processed
         """, (telegram_id, link_id))
         conn.commit()
 
@@ -221,8 +280,8 @@ def update_user_points(telegram_id, points=1):
     with connect_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE users SET points = points + ?
-            WHERE telegram_id = ?
+            UPDATE users SET points = points + %s
+            WHERE telegram_id = %s
         """, (points, telegram_id))
         conn.commit()
 
@@ -230,7 +289,7 @@ def get_link_description(link_id):
     """Fetches the description for a given link ID."""
     with connect_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT description FROM links WHERE id = ?", (link_id,))
+        cursor.execute("SELECT description FROM links WHERE id = %s", (link_id,))
         result = cursor.fetchone()
         return result[0] if result else None
 
@@ -336,8 +395,8 @@ def process_image_upload(message: types.Message) -> None:
                 with connect_db() as conn:
                     cursor = conn.cursor()
                     cursor.execute("""
-                    UPDATE likes SET channel_likes = channel_likes + ?
-                    WHERE id = ?
+                    UPDATE likes SET channel_likes = channel_likes + %s
+                    WHERE id = %s
                     """, (1,link_id))
                     conn.commit()
                 response = "✅ Verification successful! +1 point"
@@ -406,7 +465,7 @@ def is_authorized_link_adder(telegram_id):
     """Returns True if the user is authorized to add links."""
     with connect_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT telegram_id FROM authorized_link_adders WHERE telegram_id = ?", (telegram_id,))
+        cursor.execute("SELECT telegram_id FROM authorized_link_adders WHERE telegram_id = %s", (telegram_id,))
         result = cursor.fetchone()
         return result is not None
 

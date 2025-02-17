@@ -1,11 +1,13 @@
 """ ali """
 import sqlite3
+import psycopg2
+import config
 
 DB_PATH = "bot_base.db"
 
 def connect_db():
-    """ ali """
-    return sqlite3.connect(DB_PATH)
+    """Returns a connection to the PostgreSQL database."""
+    return psycopg2.connect(config.DATABASE_URL)
 
 # def setup_database():
 #     """ ali """
@@ -58,19 +60,19 @@ def add_user(telegram_id, full_name, email):
         with connect_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO users (telegram_id, full_name, email) VALUES (?, ?, ?)", 
+                "INSERT INTO users (telegram_id, full_name, email) VALUES (%s, %s, %s)", 
                         (telegram_id, full_name, email))
             conn.commit()
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         # Catch any SQLite errors and print them
-        print(f"SQLite error occurred: {e}")
+        print(f"Database error occurred: {e}")
 
 
 def add_link(channel_id, channel_name, admin_id):
     """ ali """
     with connect_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO likes (channel_id, channel_name) VALUES (?, ?)",
+        cursor.execute("INSERT INTO likes (channel_id, channel_name) VALUES (%s, %s)",
                        (channel_id, channel_name, admin_id))
         conn.commit()
 
@@ -85,7 +87,7 @@ def add_points(user_id, points=1):
     """ ali """
     with connect_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("UPDATE users SET points = points + ? WHERE telegram_id = ?",
+        cursor.execute("UPDATE users SET points = points + %s WHERE telegram_id = %s",
                        (points, user_id))
         conn.commit()
 
@@ -95,7 +97,7 @@ def get_links_for_user(user_id):
     """Fetches all YouTube links for a specific user."""
     with connect_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT channel_id, channel_name FROM likes WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT channel_id, channel_name FROM likes WHERE user_id = %s", (user_id,))
         return cursor.fetchall()  # Returns a list of (link, description) tuples
 
 
