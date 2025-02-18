@@ -407,22 +407,33 @@ def filter_non_arabic_words(text, url):
 
 # ========== ADDITIONAL FUNCTIONS ==========
 async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """List all submitted channels for a user"""
+    """List all submitted channels for a user with likes count"""
     user = update.effective_user
+    
+    # Check if user is banned
     if await is_banned(user.id):
         await update.message.reply_text("🚫 Your access has been revoked")
         return ConversationHandler.END
+        
     try:
+        # Check if user is registered
         if not await is_registered(user.id):
             await update.message.reply_text("❌ Please Register First.")
             return
+            
         conn = get_conn()
         c = conn.cursor()
+        
+        # Get channels with likes count
         c.execute("""
-            SELECT description, youtube_link,channel_id, submission_date 
-            FROM links 
-            WHERE added_by = %s
+            SELECT l.description, l.youtube_link, l.channel_id, l.submission_date,
+                   COALESCE(k.channel_likes, 0) AS likes_count
+            FROM links l
+            LEFT JOIN likes k ON l.channel_id = k.channel_id
+            WHERE l.added_by = %s
+            ORDER BY l.submission_date DESC
         """, (user.id,))
+        
         channels = c.fetchall()
         conn.close()
         
@@ -431,16 +442,17 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         response = ["📋 Your submitted channels:"]
-        for idx, (name, url, channel_id, date) in enumerate(channels, 1):
+        for idx, (name, url, channel_id, date, likes) in enumerate(channels, 1):
             response.append(
                 f"{idx}. {name}\n"
                 f"🔗 {url}\n"
                 f"🆔 ID: {channel_id}\n"
                 f"📅 {date}\n"
+                f"❤️ Likes: {likes}\n"
                 f"--------------------------------------------\n"
             )
             
-        await update.message.reply_text("\n\n".join(response))
+        await update.message.reply_text("\n".join(response))
 
     except Exception as e:
         logger.error(f"List channels error: {str(e)}")
