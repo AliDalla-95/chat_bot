@@ -305,20 +305,20 @@ async def view_links(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         logger.error(f"View links error: {e}")
         await update.message.reply_text("⚠️ Couldn't load links. Please try again.")
 
-async def send_links_page(chat_id: int, user_id: int, page: int, context: ContextTypes.DEFAULT_TYPE):
-    """Send paginated links with submit buttons"""
-    links, total_pages = get_paginated_links(user_id, page)
+# async def send_links_page(chat_id: int, user_id: int, page: int, context: ContextTypes.DEFAULT_TYPE):
+#     """Send paginated links with submit buttons"""
+#     links, total_pages = get_paginated_links(user_id, page)
     
-    for link in links:
-        link_id, yt_link, desc = link
-        text = f"📌 *Link:* {escape_markdown(yt_link)}\n📝 *Description:* {escape_markdown(desc)}"
-        keyboard = [[InlineKeyboardButton("📸 Submit Image", callback_data=f"submit_{link_id}")]]
-        await context.bot.send_message(
-            chat_id,
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="MarkdownV2"
-        )
+#     for link in links:
+#         link_id, yt_link, desc = link
+#         text = f"📌 *Link:* {escape_markdown(yt_link)}\n📝 *Description:* {escape_markdown(desc)}"
+#         keyboard = [[InlineKeyboardButton("📸 Submit Image", callback_data=f"submit_{link_id}")]]
+#         await context.bot.send_message(
+#             chat_id,
+#             text,
+#             reply_markup=InlineKeyboardMarkup(keyboard),
+#             parse_mode="MarkdownV2"
+#         )
 ##########################
 #    Callback Handlers   #
 ##########################
@@ -425,7 +425,7 @@ async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYP
             verification_passed = False
 
         if verification_passed:
-            print(f"{link_id}")
+            # print(f"{link_id}")
             mark_link_processed(user_id, link_id)
             update_user_points(user_id)
             with connect_db() as conn:

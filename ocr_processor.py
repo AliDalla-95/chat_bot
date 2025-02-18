@@ -135,6 +135,13 @@ def check_text_in_image(image_path, chosen_words):
 
     if not ocr_text:
         return False
+    # Extract words containing numbers or standalone numbers
+    words_with_numbers = re.findall(
+        r'\w*\d+\w*',  # Matches words with numbers or standalone numbers
+        ocr_text,
+        flags=re.IGNORECASE | re.UNICODE
+    )
+    # logger.info(f"Words with numbers: {words_with_numbers}")
     if isinstance(chosen_words, str):
         chosen_words = [chosen_words]
 
@@ -142,10 +149,10 @@ def check_text_in_image(image_path, chosen_words):
         pattern = r'\b' + re.escape(word) + r'\b'
         # print(f"word:{word}")
         if not re.search(pattern, ocr_text, re.IGNORECASE | re.UNICODE):
-            return False
+            return False, words_with_numbers
         
         # Check if "Subscribed" is in the OCR text
     if not re.search(r'\bSubscribed\b|\bتم الاشتراك\b|\bВы подписаны\b', ocr_text, re.IGNORECASE | re.UNICODE):
-        return False
-    
-    return True    
+        return False, words_with_numbers
+
+    return True, words_with_numbers

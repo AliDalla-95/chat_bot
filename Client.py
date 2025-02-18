@@ -407,7 +407,7 @@ def filter_non_arabic_words(text, url):
 
 # ========== ADDITIONAL FUNCTIONS ==========
 async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """List all submitted channels for a user with likes count"""
+    """List all submitted channels for the current user with likes count"""
     user = update.effective_user
     
     # Check if user is banned
@@ -424,15 +424,15 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_conn()
         c = conn.cursor()
         
-        # Get channels with likes count
+        # Get channels with likes count FOR CURRENT USER ONLY
         c.execute("""
             SELECT l.description, l.youtube_link, l.channel_id, l.submission_date,
                    COALESCE(k.channel_likes, 0) AS likes_count
             FROM links l
-            LEFT JOIN likes k ON l.channel_id = k.channel_id
+            LEFT JOIN likes k ON l.id = k.id
             WHERE l.added_by = %s
             ORDER BY l.submission_date DESC
-        """, (user.id,))
+        """, (user.id,))  # Make sure user.id is correctly passed
         
         channels = c.fetchall()
         conn.close()
@@ -441,22 +441,29 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("📭 You haven't submitted any channels yet")
             return
             
-        response = ["📋 Your submitted channels:"]
+        response = ["📋 Your Submitted Channels:"]
         for idx, (name, url, channel_id, date, likes) in enumerate(channels, 1):
             response.append(
                 f"{idx}. {name}\n"
                 f"🔗 {url}\n"
-                f"🆔 ID: {channel_id}\n"
-                f"📅 {date}\n"
+                f"🆔 Channel ID: {channel_id}\n"
+                f"📅 Submitted: {date}\n"
                 f"❤️ Likes: {likes}\n"
-                f"--------------------------------------------\n"
+                f"{'-'*40}"
             )
             
-        await update.message.reply_text("\n".join(response))
+        # Split long messages to avoid Telegram message limits
+        message = "\n\n".join(response)
+        if len(message) > 4096:
+            for x in range(0, len(message), 4096):
+                await update.message.reply_text(message[x:x+4096])
+        else:
+            await update.message.reply_text(message)
 
     except Exception as e:
         logger.error(f"List channels error: {str(e)}")
         await update.message.reply_text("❌ Error retrieving your channels")
+        
 
 # ========== REGISTRATION FLOW HANDLERS ==========
 async def email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
