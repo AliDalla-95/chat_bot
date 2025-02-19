@@ -911,12 +911,15 @@ def main() -> None:
             original_callback = handler.callback
             async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
-                    # Skip if no valid user context
-                    if not update or not update.effective_user:
-                        return await original_callback(update, context)
-                        
-                    # Check ban status
-                    if await is_banned(update.effective_user.id):
+                    # Allow /start command and Start button even if banned
+                    if update.message and update.message.text:
+                        text = update.message.text.strip()
+                        if text in ("/start", "Start"):
+                            return await original_callback(update, context)
+                    
+                    # Check ban status for all other interactions
+                    user = update.effective_user
+                    if user and await is_banned(user.id):
                         await update.message.reply_text("🚫 Your access has been revoked")
                         return ConversationHandler.END
                         
@@ -924,7 +927,7 @@ def main() -> None:
                 except Exception as e:
                     logger.error(f"Handler error: {str(e)}")
                     return ConversationHandler.END
-                    
+
             handler.callback = wrapped
             return handler
 
