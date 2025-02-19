@@ -555,8 +555,8 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
     keyboard = [
         # ["📊 User Statistics", "📢 Broadcast Message"],
         
-        ["🚫 Ban User", "✅ UnBan User"],
-        ["🗑 Delete Channel", "🗑 Delete  ALL Channelr"], # Updated buttons
+        ["🚫 Ban Client", "✅ UnBan Client"],
+        ["🗑 Delete Channel", "🗑 Delete  ALL Channele"], # Updated buttons
         ["🔙 Main Menu"]
     ]
     await update.message.reply_text(
@@ -686,7 +686,7 @@ async def confirm_delete_admin(update: Update, context: ContextTypes.DEFAULT_TYP
         conn.close()
 
     return ConversationHandler.END
-async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def unban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin = update.effective_user
     if str(admin.id) != ADMIN_TELEGRAM_ID:
         await update.message.reply_text("🚫 Access denied!")
@@ -708,11 +708,11 @@ async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """, (target_fullname,))
         
         if c.rowcount == 0:
-            await update.message.reply_text("❌ User not found in database")
+            await update.message.reply_text("❌ Client not found in database")
             return
             
         conn.commit()
-        await update.message.reply_text(f"✅ User '{target_fullname}' has been unbanned")
+        await update.message.reply_text(f"✅ Client '{target_fullname}' has been unbanned")
         
         c.execute("""
             SELECT telegram_id FROM clients
@@ -745,8 +745,8 @@ async def is_banned(telegram_id: int) -> bool:
     finally:
         conn.close()
                 
-# ========== BAN USER FUNCTIONALITY ==========
-async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ========== Ban Client FUNCTIONALITY ==========
+async def ban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ban a user from using the bot"""
     admin = update.effective_user
     if str(admin.id) != ADMIN_TELEGRAM_ID:
@@ -761,16 +761,16 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             target = " ".join(context.args).strip()
         except ValueError:
-            await update.message.reply_text("Usage: /ban <fullname> or reply to user's message")
+            await update.message.reply_text("Usage: /ban <fullname> or reply to Clients's message")
             return
     else:
-        await update.message.reply_text("Usage: /ban <fullname> or reply to user's message")
+        await update.message.reply_text("Usage: /ban <fullname> or reply to Clients's message")
         return
 
     conn = get_conn()
     try:
         c = conn.cursor()
-        # Ban user
+        # Ban Client
         c.execute("""
             UPDATE clients 
             SET is_banned = True 
@@ -778,11 +778,11 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """, (target,))
         
         if c.rowcount == 0:
-            await update.message.reply_text("❌ User not found in database")
+            await update.message.reply_text("❌ Client not found in database")
             return
             
         conn.commit()
-        await update.message.reply_text(f"✅ User {target} has been banned")
+        await update.message.reply_text(f"✅ Client {target} has been banned")
         
         # Notify banned user if possible
         c.execute("""
@@ -846,8 +846,8 @@ def main() -> None:
             entry_points=[
                 MessageHandler(filters.Regex(r"^🗑 Delete Channel"), delete_channel),
                 MessageHandler(filters.Regex(r"^🗑 Delete  ALL Channel$"), delete_channel_admin),
-                MessageHandler(filters.Regex(r"^🚫 Ban User$"), ban_user),
-                MessageHandler(filters.Regex(r"^✅ UnBan User$"), unban_user)
+                MessageHandler(filters.Regex(r"^🚫 Ban Client$"), ban_client),
+                MessageHandler(filters.Regex(r"^✅ UnBan User$"), unban_client)
             ],
             states={
                 "AWAIT_CHANNEL_URL": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)],
@@ -883,8 +883,8 @@ def main() -> None:
             admin_conv,
             MessageHandler(filters.Regex(r"^👑 Admin Panel$"), handle_admin_panel),
             MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler),
-            CommandHandler("ban", ban_user),
-            CommandHandler("unban", unban_user),
+            CommandHandler("ban", ban_client),
+            CommandHandler("unban", unban_client),
             CommandHandler("mychannels", list_channels)
         ]
 
