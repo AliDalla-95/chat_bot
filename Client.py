@@ -23,6 +23,8 @@ import warnings
 import psycopg2
 from psycopg2 import pool
 from psycopg2 import errors
+import phonenumbers
+from phonenumbers import geocoder
 
 warnings.filterwarnings("ignore", category=UserWarning, module="googleapiclient.discovery_cache")
 # ========== CONFIGURATION ==========admin
@@ -491,27 +493,73 @@ async def email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     return PHONE
 
 async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Validate and store phone number"""
-    
-    """Handle received contact information"""
+    """Handle received contact information and determine country automatically"""
     contact = update.message.contact
     
     # Verify the contact belongs to the user
     if contact.user_id != update.effective_user.id:
         await update.message.reply_text("❌ Please share your own phone number!")
-        return PHONE  # Stay in PHONE state to retry
-        # Store phone number and process registration
-    context.user_data["phone"] = contact.phone_number
-    # phone_num = update.message.contact
-    # print(f"{phone_num}")
-    # phone = re.sub(r'(?!^\+)\D', '', update.message.text)
-    # if not re.match(r'^\+\d{8,15}$', phone):
-    #     await update.message.reply_text("❌ Invalid phone format. Example: +1234567890")
-    #     return PHONE
-    # context.user_data["phone"] = phone
-    # await update.message.reply_text("👤 Enter your name:")
-    await update.message.reply_text("🌍 Enter your country:")
-    return COUNTRY
+        return PHONE
+    
+    phone_number = "+" + contact.phone_number
+    print(f"{phone_number}")
+    context.user_data["phone"] = phone_number
+    
+    try:
+        # Validate international format
+        if not phone_number.startswith("+"):
+            raise ValueError("Phone number must include country code (e.g., +123456789)")
+            
+        # Parse phone number to determine country
+        parsed_number = phonenumbers.parse(phone_number, None)
+        country_name = geocoder.description_for_number(parsed_number, "en")
+        country_name = country_name if country_name else "Unknown"
+        
+    except (phonenumbers.NumberParseException, ValueError) as e:
+        logger.error(f"Phone number error: {e}")
+        await update.message.reply_text(
+            "❌ Invalid phone number format. Please share your contact using the button below "
+            "and ensure it includes your country code (e.g., +123456789).",
+            reply_markup=ReplyKeyboardMarkup(
+                [[KeyboardButton("📱 Share Phone Number", request_contact=True)]],
+                resize_keyboard=True
+            )
+        )
+        return PHONE
+    
+    # Proceed with registration
+    fullname = update.effective_user.name
+    user_data = context.user_data
+    
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO clients 
+            (telegram_id, email, phone, fullname, country, registration_date)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (
+            update.effective_user.id,
+            user_data["email"],
+            phone_number,
+            fullname,
+            country_name,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ))
+        conn.commit()
+        await update.message.reply_text(
+            "✅ Registration complete!",
+            reply_markup=get_menu(update.effective_user.id)
+        )
+    except Exception as e:
+        logger.error(f"Database error: {str(e)}")
+        await update.message.reply_text("❌ Registration failed. Please try again.")
+        return ConversationHandler.END
+    finally:
+        conn.close()
+    
+    return ConversationHandler.END
+
 async def handle_invalid_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle non-contact input in phone number stage"""
     contact_keyboard = ReplyKeyboardMarkup(
@@ -537,42 +585,42 @@ async def handle_invalid_contact(update: Update, context: ContextTypes.DEFAULT_T
 #     await update.message.reply_text("🌍 Enter your country:")
 #     return COUNTRY
 
-async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Complete registration"""
-    country = update.message.text.strip()
-    if len(country) < 2 or len(country) > 60:
-        await update.message.reply_text("❌ Country name must be 2-60 characters")
-        return COUNTRY
-    name = update.effective_user.name
-    user_data = context.user_data
-    phone1 = "+" + user_data["phone"]
-    try:
+# async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+#     """Complete registration"""
+#     country = update.message.text.strip()
+#     if len(country) < 2 or len(country) > 60:
+#         await update.message.reply_text("❌ Country name must be 2-60 characters")
+#         return COUNTRY
+#     name = update.effective_user.name
+#     user_data = context.user_data
+#     phone1 = "+" + user_data["phone"]
+#     try:
         
-        conn = get_conn()
-        c = conn.cursor()
-        c.execute("""
-            INSERT INTO clients 
-            (telegram_id, email, phone, fullname, country, registration_date)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (
-            update.effective_user.id,
-            user_data["email"],
-            phone1,
-            name,
-            country,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ))
-        conn.commit()
-        await update.message.reply_text(
-            "✅ Registration complete!",
-            reply_markup=get_menu(update.effective_user.id)
-        )
-    except Exception as e:
-        logger.error(f"Database error: {str(e)}")
-        await update.message.reply_text("❌ Registration failed. Please try again.")
-    finally:
-        conn.close()
-    return ConversationHandler.END
+#         conn = get_conn()
+#         c = conn.cursor()
+#         c.execute("""
+#             INSERT INTO clients 
+#             (telegram_id, email, phone, fullname, country, registration_date)
+#             VALUES (%s, %s, %s, %s, %s, %s)
+#         """, (
+#             update.effective_user.id,
+#             user_data["email"],
+#             phone1,
+#             name,
+#             country,
+#             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+#         ))
+#         conn.commit()
+#         await update.message.reply_text(
+#             "✅ Registration complete!",
+#             reply_markup=get_menu(update.effective_user.id)
+#         )
+#     except Exception as e:
+#         logger.error(f"Database error: {str(e)}")
+#         await update.message.reply_text("❌ Registration failed. Please try again.")
+#     finally:
+#         conn.close()
+#     return ConversationHandler.END
 
 # ========== ADMIN FUNCTIONALITY ==========
 async def handle_channel_verification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -864,7 +912,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
             await update.message.reply_text(response, parse_mode="MarkdownV2")
         else:
-            await update.message.reply_text("❌ You're not registered! Use /register")
+            await update.message.reply_text("❌ You're not registered! Register First")
     except Exception as e:
         logger.error(f"Profile error: {e}")
         await update.message.reply_text("⚠️ Couldn't load profile. Please try again.")
@@ -958,7 +1006,7 @@ def main() -> None:
                     MessageHandler(filters.ALL & ~filters.COMMAND, handle_invalid_contact)
                 ],
                 # FULLNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_handler)],
-                COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, country_handler)],
+                # COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, country_handler)],
                 CHANNEL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_channel_url)],
                 "AWAIT_CHANNEL_URL": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)],
             },
