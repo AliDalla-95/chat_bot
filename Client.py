@@ -52,13 +52,14 @@ logger = logging.getLogger(__name__)
 MAIN_MENU = [
     ["📝 Register","Start"],
     ["🔍 Input Your YouTube URL Channel"],
-    ["📋 My Channels", "🗑 Delete Channel"]  # Added new menu item
+    ["📋 My Profile"],  # Added new menu item
+    ["📌 My Channels", "🗑 Delete Channel"]  # Added new menu item
 ]
 
 ADMIN_MENU = [
     ["Start", "👑 Admin Panel"],
     ["🔍 Input Your YouTube URL Channel"],
-    ["📋 My Channels","🗑 Delete Channel"]  # Added for admin too
+    ["📌 My Channels","🗑 Delete Channel"]  # Added for admin too
 ]
 
 
@@ -145,8 +146,10 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await handle_channel_verification(update, context)
     elif text == "👑 Admin Panel":
         await handle_admin_panel(update, context)
-    elif text == "📋 My Channels":  # New handler
+    elif text == "📌 My Channels":  # New handler
         await list_channels(update, context)
+    elif text == "📋 My Profile":
+        await profile_command(update, context)
     elif text == "🔙 Main Menu":
         await show_main_menu(update, user)
     elif text == "Start":
@@ -505,8 +508,9 @@ async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     #     await update.message.reply_text("❌ Invalid phone format. Example: +1234567890")
     #     return PHONE
     # context.user_data["phone"] = phone
-    await update.message.reply_text("👤 Enter your name:")
-    return FULLNAME
+    # await update.message.reply_text("👤 Enter your name:")
+    await update.message.reply_text("🌍 Enter your country:")
+    return COUNTRY
 async def handle_invalid_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle non-contact input in phone number stage"""
     contact_keyboard = ReplyKeyboardMarkup(
@@ -521,15 +525,16 @@ async def handle_invalid_contact(update: Update, context: ContextTypes.DEFAULT_T
     )
     return PHONE
 
-async def name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Store full name"""
-    name = update.message.text.strip()
-    if len(name) < 2 or len(name) > 100:
-        await update.message.reply_text("❌ Name must be 2-100 characters")
-        return FULLNAME
-    context.user_data["fullname"] = name
-    await update.message.reply_text("🌍 Enter your country:")
-    return COUNTRY
+# async def name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+#     """Store full name"""
+#     # name = update.message.text.strip()
+#     # if len(name) < 2 or len(name) > 100:
+#     #     await update.message.reply_text("❌ Name must be 2-100 characters")
+#     #     return FULLNAME
+#     name = update.effective_user.first_name
+#     context.user_data["fullname"] = name
+#     await update.message.reply_text("🌍 Enter your country:")
+#     return COUNTRY
 
 async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Complete registration"""
@@ -537,7 +542,7 @@ async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if len(country) < 2 or len(country) > 60:
         await update.message.reply_text("❌ Country name must be 2-60 characters")
         return COUNTRY
-    
+    name = update.effective_user.name
     user_data = context.user_data
     try:
         conn = get_conn()
@@ -562,7 +567,7 @@ async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     update.effective_user.id,
                     user_data["email"],
                     user_data["phone"],
-                    user_data["fullname"],
+                    name,
                     country,
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ))
@@ -852,7 +857,49 @@ async def ban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     finally:
         conn.close()
+def escape_markdown(text: str) -> str:
+    """Escape all MarkdownV2 special characters"""
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    return ''.join(['\\' + char if char in escape_chars else char for char in text])
 
+async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Display user profile"""
+    try:
+        user_id = update.effective_user.id
+        profile = get_profile(user_id)
+        if profile:
+            fullname, email, phone, country, registration_date = profile
+            response = (
+                f"📋 *Profile Information*\n"
+                f"👤 Name: {escape_markdown(fullname)}\n"
+                f"📧 Email: {escape_markdown(email)}\n"
+                f"📱 Phone: {escape_markdown(str(phone))}\n"
+                f"🌍 Country: {escape_markdown(country)}\n"
+                f"⭐ Registration Date: {escape_markdown(str(registration_date))}"
+            )
+            await update.message.reply_text(response, parse_mode="MarkdownV2")
+        else:
+            await update.message.reply_text("❌ You're not registered! Use /register")
+    except Exception as e:
+        logger.error(f"Profile error: {e}")
+        await update.message.reply_text("⚠️ Couldn't load profile. Please try again.")
+
+def get_profile(telegram_id: int) -> tuple:
+    """Retrieve user profile data"""
+    conn = get_conn()
+    try:
+        c = conn.cursor()
+        c.execute(
+            "SELECT fullname, email, phone, country, registration_date FROM clients WHERE telegram_id = %s",
+            (telegram_id,)
+            )
+        return c.fetchone()
+    except Exception as e:
+        logger.error(f"Error in get_profile: {e}")
+        return None
+    finally:
+        conn.close()
+    
 def main() -> None:
     """Configure and start the bot with comprehensive error handling"""
     pid_file = Path("bot.pid")
@@ -914,6 +961,7 @@ def main() -> None:
         conv_handler = ConversationHandler(
             entry_points=[
                 MessageHandler(filters.Regex(r"^📝 Register$"), handle_registration),
+                MessageHandler(filters.Regex(r"^📋 My Profile$"), profile_command),
                 MessageHandler(filters.Regex(r"^🔍 Input Your YouTube URL Channel$"), handle_channel_verification),
                 MessageHandler(filters.Regex(r"^🗑 Delete Channel$"), delete_channel),
             ],
@@ -923,7 +971,7 @@ def main() -> None:
                     MessageHandler(filters.CONTACT, phone_handler),
                     MessageHandler(filters.ALL & ~filters.COMMAND, handle_invalid_contact)
                 ],
-                FULLNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_handler)],
+                # FULLNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_handler)],
                 COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, country_handler)],
                 CHANNEL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_channel_url)],
                 "AWAIT_CHANNEL_URL": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)],
@@ -934,6 +982,7 @@ def main() -> None:
         # ========== HANDLER REGISTRATION ==========
         handlers = [
             CommandHandler("start", start),
+            CommandHandler('profile', profile_command),
             conv_handler,
             admin_conv,
             MessageHandler(filters.Regex(r"^👑 Admin Panel$"), handle_admin_panel),
