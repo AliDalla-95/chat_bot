@@ -495,14 +495,14 @@ async def email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle received contact information and determine country automatically"""
     contact = update.message.contact
-    
+    # datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     # Verify the contact belongs to the user
     if contact.user_id != update.effective_user.id:
         await update.message.reply_text("❌ Please share your own phone number!")
         return PHONE
     
     phone_number = "+" + contact.phone_number
-    print(f"{phone_number}")
+    # print(f"{phone_number}")
     context.user_data["phone"] = phone_number
     
     try:
@@ -530,7 +530,8 @@ async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     # Proceed with registration
     fullname = update.effective_user.name
     user_data = context.user_data
-    
+    email = user_data["email"]
+    registration_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         conn = get_conn()
         c = conn.cursor()
@@ -540,17 +541,24 @@ async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             VALUES (%s, %s, %s, %s, %s, %s)
         """, (
             update.effective_user.id,
-            user_data["email"],
+            email,
             phone_number,
             fullname,
             country_name,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            registration_date
         ))
         conn.commit()
         await update.message.reply_text(
-            "✅ Registration complete!",
+            # "✅ Registration complete!\n\n"
+            f"✅ Registration Complete:\n"
+            f"👤 Name: {escape_markdown(fullname)}\n"
+            f"📧 Email: {escape_markdown_2(str(email))}\n"
+            f"📱 Phone: {escape_markdown_2(phone_number)}\n"
+            f"🌍 Country: {escape_markdown(country_name)}\n"
+            f"⭐ Registration Date: {escape_markdown_2(str(registration_date))}",
             reply_markup=get_menu(update.effective_user.id)
         )
+        # Show main menu after registration       
     except Exception as e:
         logger.error(f"Database error: {str(e)}")
         await update.message.reply_text("❌ Registration failed. Please try again.")
@@ -893,6 +901,11 @@ async def ban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def escape_markdown(text: str) -> str:
     """Escape all MarkdownV2 special characters"""
     escape_chars = r'_*[]()~`>#+-=|{}.!'
+    return ''.join(['\\' + char if char in escape_chars else char for char in text])
+
+def escape_markdown_2(text: str) -> str:
+    """Escape all MarkdownV2 special characters"""
+    escape_chars = r'_*[]()~`>#=|{}!'
     return ''.join(['\\' + char if char in escape_chars else char for char in text])
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

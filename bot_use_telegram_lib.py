@@ -1,10 +1,11 @@
 import os
 import logging
+from datetime import datetime
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
     InlineKeyboardMarkup,
-    InlineKeyboardButton
+    InlineKeyboardButton, KeyboardButton, ReplyKeyboardRemove
 )
 from telegram.ext import (
     ApplicationBuilder,
@@ -19,6 +20,8 @@ import psycopg2
 import ocr_processor
 import image_processing
 import config
+import phonenumbers
+from phonenumbers import geocoder
 
 # Configure logging
 logging.basicConfig(
@@ -33,7 +36,7 @@ pending_submissions = {}
 user_pages = {}
 
 # Conversation states
-EMAIL, FULL_NAME = range(2)
+EMAIL, PHONE = range(2)
 
 def connect_db():
     """Create and return a PostgreSQL database connection"""
@@ -66,7 +69,7 @@ def get_profile(telegram_id: int) -> tuple:
         with connect_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT telegram_id, full_name, email, points FROM users WHERE telegram_id = %s",
+                    "SELECT telegram_id, full_name, email,phone,country,registration_date, points FROM users WHERE telegram_id = %s",
                     (telegram_id,)
                 )
                 return cursor.fetchone()
@@ -221,49 +224,82 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
     
 async def process_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Process email input"""
+    """Process email input and request phone number"""
     try:
         email = update.message.text.strip()
         if not email or '@' not in email or '.' not in email or len(email) > 100:
             raise ValueError("Invalid email format")
             
         context.user_data['email'] = email
-        await update.message.reply_text("Please enter your full name:")
-        return FULL_NAME
+        
+        # Create contact sharing keyboard
+        contact_keyboard = ReplyKeyboardMarkup(
+            [[KeyboardButton("📱 Share Phone Number", request_contact=True)]],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        await update.message.reply_text(
+            "Please share your phone number using the button below:",
+            reply_markup=contact_keyboard
+        )
+        return PHONE
     except Exception as e:
         logger.warning(f"Invalid email input: {e}")
         await update.message.reply_text("❌ Invalid email format! Please enter a valid email.")
         return EMAIL
 
-async def process_full_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Complete registration process"""
+async def process_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process contact information and complete registration"""
     try:
-        full_name = update.message.text.strip()
-        if not full_name or len(full_name) > 100:
-            raise ValueError("Invalid name format")
-            
-        user_id = update.effective_user.id
+        user = update.effective_user
+        contact = update.message.contact
+        
+        # Verify contact ownership
+        if contact.user_id != user.id:
+            await update.message.reply_text("❌ Please share your own phone number!")
+            return PHONE
+
+        # Get values from Telegram
+        phone_number = "+" + contact.phone_number
+        full_name = user.name
+        # print(f"{phone_number}")
+        # Get country from phone number
+        try:
+            parsed_number = phonenumbers.parse(phone_number, None)
+            country = geocoder.description_for_number(parsed_number, "en") or "Unknown"
+        except phonenumbers.NumberParseException:
+            country = "Unknown"
+
+        # Get email from context
         email = context.user_data.get('email')
-
         if not email:
-            raise ValueError("Email missing in context")
-
+            raise ValueError("Email missing in registration context")
+        registration_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Save to database
         with connect_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO users (telegram_id, full_name, email) VALUES (%s, %s, %s)",
-                    (user_id, full_name, email)
+                    "INSERT INTO users (telegram_id, full_name, email, phone, country, registration_date) "
+                    "VALUES (%s, %s, %s, %s, %s,%s)",
+                    (user.id, full_name, email, phone_number, country, registration_date)
                 )
                 conn.commit()
 
-        await update.message.reply_text("✅ Registration successful! Use /menu to start.")
-        return ConversationHandler.END
-    except psycopg2.IntegrityError as e:
-        logger.error(f"Database integrity error: {e}")
-        await update.message.reply_text("⚠️ Registration failed. You might be already registered.")
-    except psycopg2.Error as e:
-        logger.error(f"Database error in registration: {e}")
-        await update.message.reply_text("⚠️ Database error. Please try again.")
+        await update.message.reply_text(
+            f"✅ Registration Complete:\n"
+            f"👤 Name: {escape_markdown(full_name)}\n"
+            f"📧 Email: {escape_markdown_2(email)}\n"
+            f"📱 Phone: {escape_markdown_2(str(phone_number))}\n"
+            f"🌍 Country: {escape_markdown(country)}\n"
+            f"⭐ Registration Date: {escape_markdown(str(registration_date))}",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        # Show main menu after registration
+        await show_menu(update, context)
+        
+    except psycopg2.IntegrityError:
+        await update.message.reply_text("⚠️ You're already registered!")
     except Exception as e:
         logger.error(f"Registration error: {e}")
         await update.message.reply_text("⚠️ Registration failed. Please try again.")
@@ -277,16 +313,19 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         user_id = update.effective_user.id
         profile = get_profile(user_id)
         if profile:
-            _, name, email, points = profile
+            _, name, email,phone,country,registration_date, points = profile
             response = (
                 f"📋 *Profile Information*\n"
                 f"👤 Name: {escape_markdown(name)}\n"
                 f"📧 Email: {escape_markdown(email)}\n"
-                f"⭐ Points: {points}"
+                f"📱 Phone: {escape_markdown(str(phone))}\n"
+                f"🌍 Country: {escape_markdown(country)}\n"
+                f"⭐ Registration Date: {escape_markdown(str(registration_date))}\n"
+                f"🏆 Points: {points}"
             )
             await update.message.reply_text(response, parse_mode="MarkdownV2")
         else:
-            await update.message.reply_text("❌ You're not registered! Use /register")
+            await update.message.reply_text("❌ You're not registered! Register First")
     except Exception as e:
         logger.error(f"Profile error: {e}")
         await update.message.reply_text("⚠️ Couldn't load profile. Please try again.")
@@ -459,6 +498,11 @@ def escape_markdown(text: str) -> str:
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     return ''.join(['\\' + char if char in escape_chars else char for char in text])
 
+def escape_markdown_2(text: str) -> str:
+    """Escape all MarkdownV2 special characters"""
+    escape_chars = r'_*[]()~`>#-=|{}!'
+    return ''.join(['\\' + char if char in escape_chars else char for char in text])
+
 def get_paginated_links(user_id: int, page: int = 0, per_page: int = 5) -> tuple:
     """
     Get paginated list of links for a user
@@ -550,8 +594,11 @@ def main() -> None:
             MessageHandler(filters.Regex(r'^/register$'), register)
         ],
         states={
-            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_email)],
-            FULL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_full_name)]
+        EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_email)],
+        PHONE: [
+            MessageHandler(filters.CONTACT, process_phone),
+            MessageHandler(filters.ALL, lambda u,c: u.message.reply_text("❌ Please use the contact button!"))
+        ]
         },
         fallbacks=[CommandHandler('cancel', lambda u,c: ConversationHandler.END)],
     )
