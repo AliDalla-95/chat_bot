@@ -2,7 +2,7 @@ import logging
 import re
 import sqlite3
 from datetime import datetime
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -117,7 +117,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """, (
             user.id,
             "admin@example.com",
-            "+0000000000",
+            "0000000000",
             "Admin User",
             "Adminland",
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -473,18 +473,53 @@ async def email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await update.message.reply_text("❌ Invalid email format. Try again:")
         return EMAIL
     context.user_data["email"] = email
-    await update.message.reply_text("📱 Enter phone number (international format, e.g. +1234567890):")
+    # Create contact sharing keyboard
+    contact_keyboard = ReplyKeyboardMarkup(
+        [[KeyboardButton("📱 Share Phone Number", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    
+    await update.message.reply_text(
+        "Please share your phone number using the button below:",
+        reply_markup=contact_keyboard
+    )
     return PHONE
 
 async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Validate and store phone number"""
-    phone = re.sub(r'(?!^\+)\D', '', update.message.text)
-    if not re.match(r'^\+\d{8,15}$', phone):
-        await update.message.reply_text("❌ Invalid phone format. Example: +1234567890")
-        return PHONE
-    context.user_data["phone"] = phone
-    await update.message.reply_text("👤 Enter your full name:")
+    
+    """Handle received contact information"""
+    contact = update.message.contact
+    
+    # Verify the contact belongs to the user
+    if contact.user_id != update.effective_user.id:
+        await update.message.reply_text("❌ Please share your own phone number!")
+        return PHONE  # Stay in PHONE state to retry
+        # Store phone number and process registration
+    context.user_data["phone"] = contact.phone_number
+    # phone_num = update.message.contact
+    # print(f"{phone_num}")
+    # phone = re.sub(r'(?!^\+)\D', '', update.message.text)
+    # if not re.match(r'^\+\d{8,15}$', phone):
+    #     await update.message.reply_text("❌ Invalid phone format. Example: +1234567890")
+    #     return PHONE
+    # context.user_data["phone"] = phone
+    await update.message.reply_text("👤 Enter your name:")
     return FULLNAME
+async def handle_invalid_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle non-contact input in phone number stage"""
+    contact_keyboard = ReplyKeyboardMarkup(
+        [[KeyboardButton("📱 Share Phone Number", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    
+    await update.message.reply_text(
+        "❌ Please use the button below to share your phone number.",
+        reply_markup=contact_keyboard
+    )
+    return PHONE
 
 async def name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Store full name"""
@@ -506,31 +541,48 @@ async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user_data = context.user_data
     try:
         conn = get_conn()
-        c = conn.cursor()
-        c.execute("""
-            INSERT INTO clients 
-            (telegram_id, email, phone, fullname, country, registration_date)
-            VALUES (%s, %s, %s, %s, %s, %s)
+        cc = conn.cursor()
+        cc.execute("""
+            SELECT * FROM public.clients
+            where phone = %s 
         """, (
-            update.effective_user.id,
-            user_data["email"],
             user_data["phone"],
-            user_data["fullname"],
-            country,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ))
-        conn.commit()
-        await update.message.reply_text(
-            "✅ Registration complete!",
-            reply_markup=get_menu(update.effective_user.id)
-        )
+        resault_phone = cc.fetchone()
+        # print(f"{resault_phone}")
+        if not resault_phone:     
+            try:
+                conn = get_conn()
+                c = conn.cursor()
+                c.execute("""
+                    INSERT INTO clients 
+                    (telegram_id, email, phone, fullname, country, registration_date)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (
+                    update.effective_user.id,
+                    user_data["email"],
+                    user_data["phone"],
+                    user_data["fullname"],
+                    country,
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ))
+                conn.commit()
+                await update.message.reply_text(
+                    "✅ Registration complete!",
+                    reply_markup=get_menu(update.effective_user.id)
+                )
+                return ConversationHandler.END
+            except Exception as e:
+                logger.error(f"Database error: {str(e)}")
+                await update.message.reply_text("❌ Registration failed. Please try again.")
+        else:
+            await update.message.reply_text("❌ Registration failed. There is Other User By this Phone Number.")
+            return ConversationHandler.END
     except Exception as e:
         logger.error(f"Database error: {str(e)}")
         await update.message.reply_text("❌ Registration failed. Please try again.")
     finally:
         conn.close()
-    
-    return ConversationHandler.END
 
 # ========== ADMIN FUNCTIONALITY ==========
 async def handle_channel_verification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -867,7 +919,10 @@ def main() -> None:
             ],
             states={
                 EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, email_handler)],
-                PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_handler)],
+                PHONE: [
+                    MessageHandler(filters.CONTACT, phone_handler),
+                    MessageHandler(filters.ALL & ~filters.COMMAND, handle_invalid_contact)
+                ],
                 FULLNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_handler)],
                 COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, country_handler)],
                 CHANNEL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_channel_url)],
