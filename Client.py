@@ -59,6 +59,7 @@ MAIN_MENU = [
 ADMIN_MENU = [
     ["Start", "👑 Admin Panel"],
     ["🔍 Input Your YouTube URL Channel"],
+    ["📋 My Profile"],  # Added new menu item
     ["📌 My Channels","🗑 Delete Channel"]  # Added for admin too
 ]
 
@@ -119,7 +120,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             user.id,
             "admin@example.com",
             "0000000000",
-            "Admin User",
+            update.effective_user.name,
             "Adminland",
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             True
@@ -944,6 +945,7 @@ def main() -> None:
         admin_conv = ConversationHandler(
             entry_points=[
                 MessageHandler(filters.Regex(r"^🗑 Delete Channel"), delete_channel),
+                MessageHandler(filters.Regex(r"^📋 My Profile$"), profile_command),
                 MessageHandler(filters.Regex(r"^🗑 Delete  ALL Channel$"), delete_channel_admin),
                 MessageHandler(filters.Regex(r"^🚫 Ban Client$"), ban_client),
                 MessageHandler(filters.Regex(r"^✅ UnBan User$"), unban_client)
