@@ -547,48 +547,30 @@ async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user_data = context.user_data
     try:
         conn = get_conn()
-        cc = conn.cursor()
-        cc.execute("""
-            SELECT * FROM public.clients
-            where phone = %s 
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO clients 
+            (telegram_id, email, phone, fullname, country, registration_date)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """, (
+            update.effective_user.id,
+            user_data["email"],
             user_data["phone"],
+            name,
+            country,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ))
-        resault_phone = cc.fetchone()
-        # print(f"{resault_phone}")
-        if not resault_phone:     
-            try:
-                conn = get_conn()
-                c = conn.cursor()
-                c.execute("""
-                    INSERT INTO clients 
-                    (telegram_id, email, phone, fullname, country, registration_date)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (
-                    update.effective_user.id,
-                    user_data["email"],
-                    user_data["phone"],
-                    name,
-                    country,
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                ))
-                conn.commit()
-                await update.message.reply_text(
-                    "✅ Registration complete!",
-                    reply_markup=get_menu(update.effective_user.id)
-                )
-                return ConversationHandler.END
-            except Exception as e:
-                logger.error(f"Database error: {str(e)}")
-                await update.message.reply_text("❌ Registration failed. Please try again.")
-        else:
-            await update.message.reply_text("❌ Registration failed. There is Other User By this Phone Number.")
-            return ConversationHandler.END
+        conn.commit()
+        await update.message.reply_text(
+            "✅ Registration complete!",
+            reply_markup=get_menu(update.effective_user.id)
+        )
     except Exception as e:
         logger.error(f"Database error: {str(e)}")
         await update.message.reply_text("❌ Registration failed. Please try again.")
     finally:
         conn.close()
+    return ConversationHandler.END
 
 # ========== ADMIN FUNCTIONALITY ==========
 async def handle_channel_verification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

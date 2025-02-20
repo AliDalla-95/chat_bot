@@ -103,7 +103,7 @@ def get_allowed_links(telegram_id: int) -> list:
         with connect_db() as conn:
             with conn.cursor() as cursor:
                 query = """
-                    SELECT l.id, l.youtube_link, l.description
+                    SELECT l.id, l.youtube_link, l.description, l.adder
                     FROM links l
                     LEFT JOIN user_link_status uls 
                         ON l.id = uls.link_id AND uls.telegram_id = %s
@@ -488,13 +488,14 @@ async def send_links_page(chat_id: int, user_id: int, page: int, context: Contex
             return
 
         for link in links:
-            link_id, yt_link, description = link
-            safe_link = escape_markdown(yt_link)
-            safe_desc = escape_markdown(description)
+            link_id, yt_link, description, adder = link
+            safe_desc = escape_markdown(str(description))
+            safe_adder= escape_markdown(str(adder))
             
             text = (
-                f"📌 *YouTube Link:* {safe_link}\n"
-                f"📝 *Description:* {safe_desc}"
+                f"👤 *By :* {safe_adder}\n"
+                f"*Name Channel :* {safe_desc}\n"
+                f"[*YouTube Link ➡️*]({yt_link})\n"
             )
             keyboard = [
                 [InlineKeyboardButton("📸 Submit Image", callback_data=f"submit_{link_id}")]
@@ -517,7 +518,7 @@ async def send_links_page(chat_id: int, user_id: int, page: int, context: Contex
             if buttons:
                 await context.bot.send_message(
                     chat_id,
-                    "Navigate pages:",
+                    "pages",
                     reply_markup=InlineKeyboardMarkup([buttons])
                 )
                 
