@@ -333,7 +333,7 @@ async def handle_submit_callback(update: Update, context: ContextTypes.DEFAULT_T
         # Verify if the user is allowed to submit
         allowed_links = get_allowed_links(user_id)
         if not allowed_links:
-            await query.message.reply_text("⚠️ You have no available links to submit images for.")
+            await query.message.reply_text("⚠️ You have no available links.")
             return
             
         # Extract link ID from callback data
@@ -357,7 +357,7 @@ async def handle_submit_callback(update: Update, context: ContextTypes.DEFAULT_T
             
         # Store pending submission
         pending_submissions[user_id] = (link_id, description)
-        await query.message.reply_text("📸 Please upload your verification image.")
+        await query.message.reply_text("📸 Please upload your image.")
         
     except Exception as e:
         logger.error(f"Submit callback error: {e}")
@@ -412,7 +412,7 @@ async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYP
         image_path = f"temp_{user_id}_{link_id}.jpg"
         
         await photo_file.download_to_drive(image_path)
-        await update.message.reply_text("🔍 Verifying image...")
+        await update.message.reply_text("🔍 Verifying Please Wait...")
 
         verification_passed = False
         try:
@@ -445,7 +445,7 @@ async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYP
             )
     except Exception as e:
         logger.error(f"Image upload error: {e}")
-        await update.message.reply_text("⚠️ Error processing image. Please try again.")
+        await update.message.reply_text("⚠️ Error processing . Please try again.")
     finally:
         if 'image_path' in locals() and os.path.exists(image_path):
             os.remove(image_path)

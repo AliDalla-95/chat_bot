@@ -545,7 +545,9 @@ async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return COUNTRY
     name = update.effective_user.name
     user_data = context.user_data
+    phone1 = "+" + user_data["phone"]
     try:
+        
         conn = get_conn()
         c = conn.cursor()
         c.execute("""
@@ -555,7 +557,7 @@ async def country_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         """, (
             update.effective_user.id,
             user_data["email"],
-            user_data["phone"],
+            phone1,
             name,
             country,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
