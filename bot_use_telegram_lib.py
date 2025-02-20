@@ -203,7 +203,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await update.message.reply_text("Welcome back! 🎉")
             await show_menu(update, context)
         else:
-            await update.message.reply_text("Welcome! Please register using /register")
+            await update.message.reply_text("Welcome! Please Register First")
+            await show_menu(update, context)
     except Exception as e:
         logger.error(f"Error in start: {e}")
         await update.message.reply_text("⚠️ Couldn't process your request. Please try again.")
