@@ -5,7 +5,9 @@ from telegram import (
     Update,
     ReplyKeyboardMarkup,
     InlineKeyboardMarkup,
-    InlineKeyboardButton, KeyboardButton, ReplyKeyboardRemove
+    InlineKeyboardButton, 
+    KeyboardButton, 
+    ReplyKeyboardRemove
 )
 from telegram.ext import (
     ApplicationBuilder,
@@ -69,7 +71,7 @@ def get_profile(telegram_id: int) -> tuple:
         with connect_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT telegram_id, full_name, email,phone,country,registration_date, points FROM users WHERE telegram_id = %s",
+                    "SELECT telegram_id, full_name, email, phone, country, registration_date, points FROM users WHERE telegram_id = %s",
                     (telegram_id,)
                 )
                 return cursor.fetchone()
@@ -77,29 +79,34 @@ def get_profile(telegram_id: int) -> tuple:
         logger.error(f"Error in get_profile: {e}")
         return None
 
-def link_exists(link):
-    """Check if YouTube link exists in database"""
+def store_message_id(link_id: int, message_id: int) -> None:
+    """Store Telegram message ID for a link"""
     try:
         with connect_db() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT 1 FROM links WHERE youtube_link = %s", (link,))
-                return cursor.fetchone() is not None
-    except psycopg2.Error as e:
-        logging.error(f"Database error in link_exists: {e}")
-        return False
+                cursor.execute(
+                    "UPDATE links SET telegram_message_id = %s WHERE id = %s",
+                    (message_id, link_id)
+                )
+                conn.commit()
+    except Exception as e:
+        logger.error(f"Error storing message ID: {e}")
 
-def get_adder(telegram_id):
-    """Get user's full name who added link"""
+def get_message_id(link_id: int) -> int:
+    """Get stored Telegram message ID for a link"""
     try:
         with connect_db() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT full_name FROM users WHERE telegram_id = %s", (telegram_id,))
+                cursor.execute(
+                    "SELECT telegram_message_id FROM links WHERE id = %s",
+                    (link_id,)
+                )
                 result = cursor.fetchone()
                 return result[0] if result else None
-    except psycopg2.Error as e:
-        logging.error(f"Database error in get_adder: {e}")
+    except Exception as e:
+        logger.error(f"Error getting message ID: {e}")
         return None
-    
+
 def get_allowed_links(telegram_id: int) -> list:
     """Retrieve links available for the user"""
     try:
@@ -118,6 +125,21 @@ def get_allowed_links(telegram_id: int) -> list:
         logger.error(f"Error in get_allowed_links: {e}")
         return []
 
+def get_link_description(link_id: int) -> str:
+    """Get description for a specific link"""
+    try:
+        with connect_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT description FROM links WHERE id = %s",
+                    (link_id,))
+                result = cursor.fetchone()
+                return result[0] if result else None
+    except Exception as e:
+        logger.error(f"Error in get_link_description: {e}")
+        return None
+    
+    
 def mark_link_processed(telegram_id: int, link_id: int) -> None:
     """Mark a link as processed for the user"""
     try:
@@ -149,33 +171,6 @@ def update_user_points(telegram_id: int, points: int = 1) -> None:
         logger.error(f"Error in update_user_points: {e}")
         conn.rollback()
 
-def get_link_description(link_id: int) -> str:
-    """Get description for a specific link"""
-    try:
-        with connect_db() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT description FROM links WHERE id = %s",
-                    (link_id,))
-                result = cursor.fetchone()
-                return result[0] if result else None
-    except Exception as e:
-        logger.error(f"Error in get_link_description: {e}")
-        return None
-    
-def is_authorized_link_adder(telegram_id):
-    """Returns True if the user is authorized to add links."""
-    try:
-        with connect_db() as conn:
-            with conn.cursor() as cursor:
-                cursor = conn.cursor()
-                cursor.execute("SELECT telegram_id FROM authorized_link_adders WHERE telegram_id = %s", (telegram_id,))
-                result = cursor.fetchone()
-                return result is not None
-    except psycopg2.Error as e:
-        logging.error(f"Database error in is_authorized_link_adder: {e}")
-        return False
-    
 ##########################
 #    Command Handlers    #
 ##########################
@@ -200,10 +195,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text("🚫 Your access has been revoked")
             return ConversationHandler.END
         if user_exists(user_id):
-            if user_id in config.ADMIN_IDS:
-                await update.message.reply_text("Welcome back Admin! 🛡️")
-            else:
-                await update.message.reply_text("Welcome back! 🎉")
+            await update.message.reply_text("Welcome back! 🎉")
             await show_menu(update, context)
         else:
             await update.message.reply_text("Welcome! Please Register First")
@@ -222,9 +214,9 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if user_exists(user_id):
             await update.message.reply_text("You're already registered! ✅")
             return ConversationHandler.END
-            
+        
         await update.message.reply_text("Please enter your email address:")
-        return EMAIL  # This triggers the EMAIL state
+        return EMAIL
     except Exception as e:
         logger.error(f"Error in register: {e}")
         await update.message.reply_text("⚠️ Couldn't start registration. Please try again.")
@@ -239,7 +231,6 @@ async def process_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             
         context.user_data['email'] = email
         
-        # Create contact sharing keyboard
         contact_keyboard = ReplyKeyboardMarkup(
             [[KeyboardButton("📱 Share Phone Number", request_contact=True)]],
             resize_keyboard=True,
@@ -247,7 +238,7 @@ async def process_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
         
         await update.message.reply_text(
-            "Please share your phone number using the button below:",
+            "Please share your phone number:",
             reply_markup=contact_keyboard
         )
         return PHONE
@@ -262,33 +253,27 @@ async def process_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         user = update.effective_user
         contact = update.message.contact
         
-        # Verify contact ownership
         if contact.user_id != user.id:
             await update.message.reply_text("❌ Please share your own phone number!")
             return PHONE
 
-        # Get values from Telegram
         phone_number = "+" + contact.phone_number
         full_name = user.name
-        # print(f"{phone_number}")
-        # Get country from phone number
+        
         try:
             parsed_number = phonenumbers.parse(phone_number, None)
             country = geocoder.description_for_number(parsed_number, "en") or "Unknown"
         except phonenumbers.NumberParseException:
             country = "Unknown"
 
-        # Get email from context
         email = context.user_data.get('email')
-        if not email:
-            raise ValueError("Email missing in registration context")
         registration_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # Save to database
+        
         with connect_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO users (telegram_id, full_name, email, phone, country, registration_date) "
-                    "VALUES (%s, %s, %s, %s, %s,%s)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     (user.id, full_name, email, phone_number, country, registration_date)
                 )
                 conn.commit()
@@ -297,12 +282,11 @@ async def process_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             f"✅ Registration Complete:\n"
             f"👤 Name: {escape_markdown(full_name)}\n"
             f"📧 Email: {escape_markdown_2(email)}\n"
-            f"📱 Phone: {escape_markdown_2(str(phone_number))}\n"
+            f"📱 Phone: {escape_markdown_2(phone_number)}\n"
             f"🌍 Country: {escape_markdown(country)}\n"
-            f"⭐ Registration Date: {escape_markdown(str(registration_date))}",
+            f"⭐ Registration Date: {escape_markdown(registration_date)}",
             reply_markup=ReplyKeyboardRemove()
         )
-        # Show main menu after registration
         await show_menu(update, context)
         
     except psycopg2.IntegrityError:
@@ -320,17 +304,17 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         user_id = update.effective_user.id
         if await is_banned(user_id):
             await update.message.reply_text("🚫 Your access has been revoked")
-            return ConversationHandler.END
+            return
         profile = get_profile(user_id)
         if profile:
-            _, name, email,phone,country,registration_date, points = profile
+            _, name, email, phone, country, reg_date, points = profile
             response = (
                 f"📋 *Profile Information*\n"
                 f"👤 Name: {escape_markdown(name)}\n"
                 f"📧 Email: {escape_markdown(email)}\n"
-                f"📱 Phone: {escape_markdown(str(phone))}\n"
+                f"📱 Phone: {escape_markdown(phone)}\n"
                 f"🌍 Country: {escape_markdown(country)}\n"
-                f"⭐ Registration Date: {escape_markdown(str(registration_date))}\n"
+                f"⭐ Registration Date: {escape_markdown(reg_date)}\n"
                 f"🏆 Points: {points}"
             )
             await update.message.reply_text(response, parse_mode="MarkdownV2")
@@ -346,7 +330,7 @@ async def view_links(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         user_id = update.effective_user.id
         if await is_banned(user_id):
             await update.message.reply_text("🚫 Your access has been revoked")
-            return ConversationHandler.END
+            return
         if not user_exists(user_id):
             await update.message.reply_text("❌ Please register first!")
             return
@@ -357,81 +341,53 @@ async def view_links(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         logger.error(f"View links error: {e}")
         await update.message.reply_text("⚠️ Couldn't load links. Please try again.")
 
-# async def send_links_page(chat_id: int, user_id: int, page: int, context: ContextTypes.DEFAULT_TYPE):
-#     """Send paginated links with submit buttons"""
-#     links, total_pages = get_paginated_links(user_id, page)
-    
-#     for link in links:
-#         link_id, yt_link, desc = link
-#         text = f"📌 *Link:* {escape_markdown(yt_link)}\n📝 *Description:* {escape_markdown(desc)}"
-#         keyboard = [[InlineKeyboardButton("📸 Submit Image", callback_data=f"submit_{link_id}")]]
-#         await context.bot.send_message(
-#             chat_id,
-#             text,
-#             reply_markup=InlineKeyboardMarkup(keyboard),
-#             parse_mode="MarkdownV2"
-#         )
 ##########################
-#    Callback Handlers   #
+#    Link Management     #
 ##########################
-async def handle_submit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle image submission requests with verification"""
+async def send_links_page(chat_id: int, user_id: int, page: int, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send paginated links with message ID tracking"""
     try:
-        query = update.callback_query
-        await query.answer()  # Acknowledge the callback
+        links, total_pages = get_paginated_links(user_id, page)
         
-        user_id = query.from_user.id
-        
-        # Verify if the user is allowed to submit
-        allowed_links = get_allowed_links(user_id)
-        if not allowed_links:
-            await query.message.reply_text("⚠️ You have no available links.")
+        if not links:
+            await context.bot.send_message(chat_id, "🎉 No more links available!")
             return
-            
-        # Extract link ID from callback data
-        try:
-            link_id = int(query.data.split("_")[1])
-        except (IndexError, ValueError) as e:
-            logger.error(f"Invalid callback data: {query.data} - {e}")
-            await query.message.reply_text("❌ Invalid submission request. Please try again.")
-            return
-            
-        # Verify the link is in the allowed list
-        if not any(link[0] == link_id for link in allowed_links):
-            await query.message.reply_text("⚠️ This link is no longer available for submission.")
-            return
-            
-        # Get link description
-        description = get_link_description(link_id)
-        if not description:
-            await query.message.reply_text("❌ Error: Link description not found.")
-            return
-            
-        # Store pending submission
-        pending_submissions[user_id] = (link_id, description)
-        await query.message.reply_text("📸 Please upload your image.")
-        
-    except Exception as e:
-        logger.error(f"Submit callback error: {e}")
-        if 'query' in locals():
-            await query.message.reply_text("⚠️ Couldn't process your request. Please try again.")
-async def navigate_links(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle pagination requests"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        user_id = query.from_user.id
-        new_page = int(query.data.split("_")[1])
-        await send_links_page(query.message.chat_id, user_id, new_page, context)
-        await query.message.delete()
-    except Exception as e:
-        logger.error(f"Pagination error: {e}")
-        await query.message.reply_text("⚠️ Couldn't load page. Please try again.")
 
-##########################
-#    Message Handlers    #
-##########################
+        for link in links:
+            link_id, yt_link, desc, adder = link
+            text = (
+                f"📛 {escape_markdown(desc)}\n"
+                f"👤 *By:* {escape_markdown(adder)}\n"
+                f"[🔗 YouTube Link]({yt_link})"
+            )
+            keyboard = [[InlineKeyboardButton("📸 Submit Image", callback_data=f"submit_{link_id}")]]
+            
+            message = await context.bot.send_message(
+                chat_id,
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="MarkdownV2"
+            )
+            store_message_id(link_id, message.message_id)
+
+        if total_pages > 1:
+            buttons = []
+            if page > 0:
+                buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"prev_{page-1}"))
+            if page < total_pages - 1:
+                buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"next_{page+1}"))
+            
+            if buttons:
+                await context.bot.send_message(
+                    chat_id,
+                    "Navigate between pages:",
+                    reply_markup=InlineKeyboardMarkup([buttons])
+                )
+                
+    except Exception as e:
+        logger.error(f"Error sending links: {e}")
+        await context.bot.send_message(chat_id, "⚠️ Couldn't load links. Please try later.")
+
 async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle menu text commands"""
     try:
@@ -439,7 +395,6 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
         if text == "👋 Start":
             await start(update, context)
         elif text == "📝 Register":
-            await update.message.reply_text("Starting registration...")
             await register(update, context)
         elif text == "📋 Profile":
             await profile_command(update, context)
@@ -451,169 +406,175 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error(f"Text command error: {e}")
         await update.message.reply_text("⚠️ Couldn't process command. Please try again.")
 
+
+##########################
+#    Image Submission    #
+##########################
+async def handle_submit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle image submission requests with message threading"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        user_id = query.from_user.id
+        
+        link_id = int(query.data.split("_")[1])
+        message_id = get_message_id(link_id)
+        description = get_link_description(link_id)
+        
+        if not message_id or not description:
+            await query.message.reply_text("❌ Link details missing")
+            return
+            
+        pending_submissions[user_id] = (link_id, description, message_id)
+        
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"📸 Submit image for: {description}",
+            reply_to_message_id=message_id
+        )
+        
+    except Exception as e:
+        logger.error(f"Submit error: {e}")
+        await query.message.reply_text("⚠️ Couldn't process request. Please try again.")
+
 async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle image verification process"""
+    """Handle image verification with threaded replies"""
     try:
         user_id = update.effective_user.id
         if user_id not in pending_submissions:
-            await update.message.reply_text("❌ No active submission! Use /viewlinks first.")
+            await update.message.reply_text("❌ No active submission!")
             return
 
-        link_id, required_text = pending_submissions[user_id]
+        link_id, req_text, msg_id = pending_submissions[user_id]
         photo_file = await update.message.photo[-1].get_file()
         image_path = f"temp_{user_id}_{link_id}.jpg"
         
         await photo_file.download_to_drive(image_path)
-        await update.message.reply_text("🔍 Verifying Please Wait...")
+        processing_msg = await update.message.reply_text(
+            "🔍 Verifying...",
+            reply_to_message_id=msg_id
+        )
 
         verification_passed = False
         try:
-            if ocr_processor.check_text_in_image(image_path, required_text):
+            if ocr_processor.check_text_in_image(image_path, req_text):
                 verification_passed = True
-            elif image_processing.check_text_in_image(image_path, required_text):
+            elif image_processing.check_text_in_image(image_path, req_text):
                 verification_passed = True
         except Exception as e:
             logger.error(f"Image processing error: {e}")
-            verification_passed = False
 
         if verification_passed:
-            # print(f"{link_id}")
             mark_link_processed(user_id, link_id)
             update_user_points(user_id)
-            with connect_db() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                UPDATE likes SET channel_likes = channel_likes + %s
-                WHERE id = %s
-                """, (1,link_id))
-                conn.commit()
             await update.message.reply_text(
-                "✅ Verification successful! +1 point earned.\n"
-                "🚫 This link is now completed for you."
+                "✅ Verification successful! +1 point",
+                reply_to_message_id=msg_id
             )
         else:
             await update.message.reply_text(
-                "❌ Verification failed. Please try again."
+                "❌ Verification failed. Try again.",
+                reply_to_message_id=msg_id
             )
+
+        await context.bot.delete_message(
+            chat_id=update.effective_chat.id,
+            message_id=processing_msg.message_id
+        )
+
     except Exception as e:
-        logger.error(f"Image upload error: {e}")
-        await update.message.reply_text("⚠️ Error processing . Please try again.")
+        logger.error(f"Image error: {e}")
+        await update.message.reply_text("⚠️ Processing error. Please try again.")
     finally:
         if 'image_path' in locals() and os.path.exists(image_path):
             os.remove(image_path)
         pending_submissions.pop(user_id, None)
 
 ##########################
-#    Helper Functions    #
-##########################
-def escape_markdown(text: str) -> str:
-    """Escape all MarkdownV2 special characters"""
-    escape_chars = r'_*[]()~`>#+-=|{}.!'
-    return ''.join(['\\' + char if char in escape_chars else char for char in text])
-
-def escape_markdown_2(text: str) -> str:
-    """Escape all MarkdownV2 special characters"""
-    escape_chars = r'_*[]()~`>#-=|{}!'
-    return ''.join(['\\' + char if char in escape_chars else char for char in text])
-
-def get_paginated_links(user_id: int, page: int = 0, per_page: int = 5) -> tuple:
-    """
-    Get paginated list of links for a user
-    Returns: (list_of_links, total_pages)
-    """
-    try:
-        links = get_allowed_links(user_id)
-        if not links:
-            return [], 0
-            
-        total_pages = (len(links) - 1) // per_page + 1
-        start_index = page * per_page
-        end_index = start_index + per_page
-        return links[start_index:end_index], total_pages
-        
-    except Exception as e:
-        logger.error(f"Error in get_paginated_links: {e}")
-        return [], 0
-
-async def is_banned(telegram_id: int) -> bool:
-    """Check if user is banned with DB connection handling"""
-    try:
-        with connect_db() as conn:
-            c = conn.cursor()
-            c.execute("SELECT is_banned FROM users WHERE telegram_id = %s", (telegram_id,))
-            result = c.fetchone()
-            return bool(result and result[0] == 1)
-    except psycopg2.Error as e:
-        logger.error(f"Ban check failed: {str(e)}")
-        return False
-    finally:
-        conn.close()
-   
-async def send_links_page(chat_id: int, user_id: int, page: int, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send paginated links to user"""
-    try:
-        links, total_pages = get_paginated_links(user_id, page)
-        
-        if not links:
-            await context.bot.send_message(chat_id, "🎉 No more links available at the moment!")
-            return
-
-        for link in links:
-            link_id, yt_link, description, adder = link
-            safe_desc = escape_markdown(str(description))
-            safe_adder= escape_markdown(str(adder))
-            
-            text = (
-                f"👤 *By :* {safe_adder}\n"
-                f"*Name Channel :* {safe_desc}\n"
-                f"[*YouTube Link ➡️*]({yt_link})\n"
-            )
-            keyboard = [
-                [InlineKeyboardButton("📸 Submit Image", callback_data=f"submit_{link_id}")]
-            ]
-            await context.bot.send_message(
-                chat_id,
-                text,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="MarkdownV2"
-            )
-
-        # Pagination controls
-        if total_pages > 1:
-            buttons = []
-            if page > 0:
-                buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"prev_{page-1}"))
-            if page < total_pages - 1:
-                buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"next_{page+1}"))
-            
-            if buttons:
-                await context.bot.send_message(
-                    chat_id,
-                    "pages",
-                    reply_markup=InlineKeyboardMarkup([buttons])
-                )
-                
-    except Exception as e:
-        logger.error(f"Error in send_links_page: {e}")
-        await context.bot.send_message(chat_id, "⚠️ Couldn't load links. Please try again later.")
-
-##########################
 #    Error Handling      #
 ##########################
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Global error handler"""
-    logger.error("Exception:", exc_info=context.error)
+    """Global error handler for all uncaught exceptions"""
+    logger.error("Unhandled exception:", exc_info=context.error)
     if update.effective_message:
-        await update.effective_message.reply_text("⚠️ An error occurred. Please try again.")
+        await update.effective_message.reply_text(
+            "⚠️ An unexpected error occurred. Please try again later."
+        )
+
+##########################
+#    Pagination Handler  #
+##########################
+async def navigate_links(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle pagination navigation for links list"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        action, page_str = query.data.split('_')
+        new_page = int(page_str)
+        
+        # Update user's current page
+        user_pages[user_id] = new_page
+        
+        # Send updated page
+        await send_links_page(query.message.chat_id, user_id, new_page, context)
+        await query.message.delete()
+        
+    except Exception as e:
+        logger.error(f"Pagination error: {e}")
+        if 'query' in locals():
+            await query.message.reply_text("⚠️ Couldn't load page. Please try again.")
+            
+            
+##########################
+#    Helper Functions    #
+##########################
+def escape_markdown(text: str) -> str:
+    """Escape MarkdownV2 special characters"""
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    return ''.join(['\\' + c if c in escape_chars else c for c in text])
+
+def escape_markdown_2(text: str) -> str:
+    """Alternative Markdown escaping"""
+    escape_chars = r'_*[]()~`>#-=|{}!'
+    return ''.join(['\\' + c if c in escape_chars else c for c in text])
+
+def get_paginated_links(user_id: int, page: int = 0, per_page: int = 5) -> tuple:
+    """Get paginated list of links"""
+    try:
+        links = get_allowed_links(user_id)
+        total_pages = (len(links) - 1) // per_page + 1
+        start = page * per_page
+        end = start + per_page
+        return links[start:end], total_pages
+    except Exception as e:
+        logger.error(f"Pagination error: {e}")
+        return [], 0
+
+async def is_banned(telegram_id: int) -> bool:
+    """Check if user is banned"""
+    try:
+        with connect_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT is_banned FROM users WHERE telegram_id = %s",
+                    (telegram_id,)
+                )
+                result = cursor.fetchone()
+                return bool(result and result[0])
+    except Exception as e:
+        logger.error(f"Ban check error: {e}")
+        return False
 
 ##########################
 #    Main Application    #
 ##########################
 def main() -> None:
-    """Start and configure the bot"""
-    application = ApplicationBuilder().token(config.TOKEN1).build()
+    """Configure and start the bot"""
+    application = ApplicationBuilder().token(config.TOKEN).build()
 
-    # Configure conversation handler for registration
+    # Conversation handler for registration
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler('register', register),
@@ -621,11 +582,11 @@ def main() -> None:
             MessageHandler(filters.Regex(r'^/register$'), register)
         ],
         states={
-        EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_email)],
-        PHONE: [
-            MessageHandler(filters.CONTACT, process_phone),
-            MessageHandler(filters.ALL, lambda u,c: u.message.reply_text("❌ Please use the contact button!"))
-        ]
+            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_email)],
+            PHONE: [
+                MessageHandler(filters.CONTACT, process_phone),
+                MessageHandler(filters.ALL, lambda u,c: u.message.reply_text("❌ Please use contact button!"))
+            ]
         },
         fallbacks=[CommandHandler('cancel', lambda u,c: ConversationHandler.END)],
     )
@@ -638,26 +599,18 @@ def main() -> None:
         CommandHandler('viewlinks', view_links),
         conv_handler,
         CallbackQueryHandler(handle_submit_callback, pattern=r"^submit_\d+$"),
-        CallbackQueryHandler(navigate_links, pattern=r"^(prev|next)_\d+$"),
+        CallbackQueryHandler(lambda u,c: navigate_links(u,c), pattern=r"^(prev|next)_\d+$"),
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_commands),
         MessageHandler(filters.PHOTO, process_image_upload)
     ]
 
-    application.add_handler(conv_handler)  # Add this before other handlers
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_commands))
-    # Add all handlers and error handler
     for handler in handlers:
         application.add_handler(handler)
-    application.add_handler(CallbackQueryHandler(handle_submit_callback, pattern=r"^submit_\d+$"))
-    application.add_error_handler(error_handler)
+    
+    application.add_error_handler(lambda u,c: error_handler(u,c))
 
-    # Start the bot
+    # Start bot
     application.run_polling()
 
 if __name__ == '__main__':
     main()
-    
-    
-    
-    
-    
