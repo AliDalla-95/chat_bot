@@ -365,13 +365,13 @@ async def send_links_page(chat_id: int, user_id: int, page: int, context: Contex
             )
             keyboard = [[InlineKeyboardButton("📸 Submit Image", callback_data=f"submit_{link_id}")]]
             
-            message = await context.bot.send_message(
+            await context.bot.send_message(
                 chat_id,
                 text,
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="MarkdownV2"
             )
-            store_message_id(link_id, message.message_id)
+            # store_message_id(link_id, message.message_id)
 
         if total_pages > 1:
             buttons = []
@@ -590,7 +590,8 @@ def main() -> None:
         entry_points=[
             CommandHandler('register', register),
             MessageHandler(filters.Regex(r'^📝 Register$'), register),
-            MessageHandler(filters.Regex(r'^/register$'), register)
+            MessageHandler(filters.Regex(r'^/register$'), register),
+            
         ],
         states={
             EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_email)],
