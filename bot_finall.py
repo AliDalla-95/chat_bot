@@ -543,9 +543,9 @@ def escape_markdown(text: str) -> str:
     return ''.join(['\\' + c if c in escape_chars else c for c in text])
 
 def escape_markdown_2(text: str) -> str:
-    """Alternative Markdown escaping"""
+    """Escape all MarkdownV2 special characters"""
     escape_chars = r'_*[]()~`>#-=|{}!'
-    return ''.join(['\\' + c if c in escape_chars else c for c in text])
+    return ''.join(['\\' + char if char in escape_chars else char for char in text])
 
 def get_paginated_links(user_id: int, page: int = 0, per_page: int = 5) -> tuple:
     """Get paginated list of links"""
