@@ -195,7 +195,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text("🚫 Your access has been revoked")
             return ConversationHandler.END
         if user_exists(user_id):
-            await update.message.reply_text("Welcome back! 🎉")
+            if user_id in config.ADMIN_IDS:
+                await update.message.reply_text("Welcome back Admin! 🛡️")
+            else:
+                await update.message.reply_text("Welcome back! 🎉")
             await show_menu(update, context)
         else:
             await update.message.reply_text("Welcome! Please Register First")
@@ -395,6 +398,7 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
         if text == "👋 Start":
             await start(update, context)
         elif text == "📝 Register":
+            await update.message.reply_text("Starting registration...")
             await register(update, context)
         elif text == "📋 Profile":
             await profile_command(update, context)
