@@ -467,6 +467,13 @@ async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYP
         if verification_passed:
             mark_link_processed(user_id, link_id)
             update_user_points(user_id)
+            with connect_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                UPDATE likes SET channel_likes = channel_likes + %s
+                WHERE id = %s
+                """, (1,link_id))
+                conn.commit()
             await update.message.reply_text(
                 "✅ Verification successful! +1 point",
                 reply_to_message_id=msg_id
