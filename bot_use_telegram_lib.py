@@ -196,6 +196,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command"""
     try:
         user_id = update.effective_user.id
+        if await is_banned(user_id):
+            await update.message.reply_text("🚫 Your access has been revoked")
+            return ConversationHandler.END
         if user_exists(user_id):
             if user_id in config.ADMIN_IDS:
                 await update.message.reply_text("Welcome back Admin! 🛡️")
@@ -213,6 +216,9 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start registration process"""
     try:
         user_id = update.effective_user.id
+        if await is_banned(user_id):
+            await update.message.reply_text("🚫 Your access has been revoked")
+            return ConversationHandler.END
         if user_exists(user_id):
             await update.message.reply_text("You're already registered! ✅")
             return ConversationHandler.END
@@ -312,6 +318,9 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     """Display user profile"""
     try:
         user_id = update.effective_user.id
+        if await is_banned(user_id):
+            await update.message.reply_text("🚫 Your access has been revoked")
+            return ConversationHandler.END
         profile = get_profile(user_id)
         if profile:
             _, name, email,phone,country,registration_date, points = profile
@@ -335,6 +344,9 @@ async def view_links(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     """Display available links"""
     try:
         user_id = update.effective_user.id
+        if await is_banned(user_id):
+            await update.message.reply_text("🚫 Your access has been revoked")
+            return ConversationHandler.END
         if not user_exists(user_id):
             await update.message.reply_text("❌ Please register first!")
             return
@@ -522,7 +534,21 @@ def get_paginated_links(user_id: int, page: int = 0, per_page: int = 5) -> tuple
     except Exception as e:
         logger.error(f"Error in get_paginated_links: {e}")
         return [], 0
-    
+
+async def is_banned(telegram_id: int) -> bool:
+    """Check if user is banned with DB connection handling"""
+    try:
+        with connect_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT is_banned FROM users WHERE telegram_id = %s", (telegram_id,))
+            result = c.fetchone()
+            return bool(result and result[0] == 1)
+    except psycopg2.Error as e:
+        logger.error(f"Ban check failed: {str(e)}")
+        return False
+    finally:
+        conn.close()
+   
 async def send_links_page(chat_id: int, user_id: int, page: int, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send paginated links to user"""
     try:

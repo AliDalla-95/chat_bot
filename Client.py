@@ -109,6 +109,9 @@ async def is_registered(telegram_id: int) -> bool:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command with dynamic menu"""
     user = update.effective_user
+    if await is_banned(user.id):
+        await update.message.reply_text("🚫 Your access has been revoked")
+        return ConversationHandler.END
     menu = get_menu(user.id)
     # Auto-register admin if not in database
     if str(user.id) == ADMIN_TELEGRAM_ID and not await is_registered(user.id):
@@ -130,12 +133,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         conn.commit()
         conn.close()
         await update.message.reply_text(f"👋 Welcome {user.first_name}!",
-        reply_markup=get_menu(user.id))
+        reply_markup=menu)
         return
     
     await update.message.reply_text(
         f"👋 Welcome {user.first_name}!",
-        reply_markup=get_menu(user.id)
+        reply_markup=menu
     )
 
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -654,6 +657,7 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # ["📊 User Statistics", "📢 Broadcast Message"],
         
         ["🚫 Ban Client", "✅ UnBan Client"],
+        ["🚫 Ban User", "✅ UnBan User"],
         ["🗑 Delete Channel", "🗑 Delete  ALL Channele"], # Updated buttons
         ["🔙 Main Menu"]
     ]
@@ -793,39 +797,48 @@ async def unban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         target_fullname = " ".join(context.args).strip()
     else:
-        await update.message.reply_text("Usage: /unban <full name>")
+        await update.message.reply_text("Usage: /unbanclient <full name>")
         return
 
     conn = get_conn()
     try:
         c = conn.cursor()
         c.execute("""
-            UPDATE clients 
-            SET is_banned = False 
-            WHERE fullname = %s
-        """, (target_fullname,))
-        
-        if c.rowcount == 0:
-            await update.message.reply_text("❌ Client not found in database")
-            return
-            
-        conn.commit()
-        await update.message.reply_text(f"✅ Client '{target_fullname}' has been unbanned")
-        
-        c.execute("""
             SELECT telegram_id FROM clients
-            WHERE fullname = %s
+            WHERE is_banned = True And fullname = %s 
         """, (target_fullname,))
-        user_data = c.fetchone()
-        if user_data and user_data[0]:
-            try:
-                await context.bot.send_message(
-                    chat_id=user_data[0],
-                    text="✅ Your access to this bot has been restored"
-                )
-            except Exception as e:
-                logger.error(f"Unban notification failed: {str(e)}")
+        check = c.fetchone()
+        if check:
+            c = conn.cursor()
+            c.execute("""
+                UPDATE clients 
+                SET is_banned = False 
+                WHERE fullname = %s
+            """, (target_fullname,))
             
+            if c.rowcount == 0:
+                await update.message.reply_text("❌ Client not found in database")
+                return
+                
+            conn.commit()
+            await update.message.reply_text(f"✅ Client '{target_fullname}' has been unbanned")
+            
+            c.execute("""
+                SELECT telegram_id FROM clients
+                WHERE fullname = %s
+            """, (target_fullname,))
+            user_data = c.fetchone()
+            if user_data and user_data[0]:
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_data[0],
+                        text="✅ Your access to this bot has been restored"
+                    )
+                except Exception as e:
+                    logger.error(f"Unban notification failed: {str(e)}")
+        else:
+            await update.message.reply_text("❌ Client Already restored")
+            return
     finally:
         conn.close()
 
@@ -859,10 +872,10 @@ async def ban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             target = " ".join(context.args).strip()
         except ValueError:
-            await update.message.reply_text("Usage: /ban <fullname> or reply to Clients's message")
+            await update.message.reply_text("Usage: /banclient <fullname> or reply to Clients's message")
             return
     else:
-        await update.message.reply_text("Usage: /ban <fullname> or reply to Clients's message")
+        await update.message.reply_text("Usage: /banclient <fullname> or reply to Clients's message")
         return
 
     conn = get_conn()
@@ -870,29 +883,37 @@ async def ban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
         c = conn.cursor()
         # Ban Client
         c.execute("""
-            UPDATE clients 
-            SET is_banned = True 
-            WHERE fullname = %s
-        """, (target,))
-        
-        if c.rowcount == 0:
-            await update.message.reply_text("❌ Client not found in database")
-            return
-            
-        conn.commit()
-        await update.message.reply_text(f"✅ Client {target} has been banned")
-        
-        # Notify banned user if possible
-        c.execute("""
             SELECT telegram_id FROM clients
-            WHERE fullname = %s
+            WHERE is_banned = False And fullname = %s
         """, (target,))
-        user_data = c.fetchone()
-        if user_data and user_data[0]:
-            await context.bot.send_message(
-                chat_id=user_data[0],
-                text="🚫 Your access to this bot has been revoked"
-            )
+        check = c.fetchone()
+        if check:
+            c.execute("""
+                UPDATE clients 
+                SET is_banned = True 
+                WHERE fullname = %s
+            """, (target,))
+            if c.rowcount == 0:
+                await update.message.reply_text("❌ Client not found in database")
+                return
+                
+            conn.commit()
+            await update.message.reply_text(f"✅ Client {target} has been banned")
+            
+            # Notify banned user if possible
+            c.execute("""
+                SELECT telegram_id FROM clients
+                WHERE fullname = %s
+            """, (target,))
+            user_data = c.fetchone()
+            if user_data and user_data[0]:
+                await context.bot.send_message(
+                    chat_id=user_data[0],
+                    text="🚫 Your access to this bot has been revoked"
+                )
+        else:
+            await update.message.reply_text("❌ Client Already revoked")
+            return
     except Exception as e:
         logger.error(f"Ban notification failed: {str(e)}")
             
@@ -910,8 +931,12 @@ def escape_markdown_2(text: str) -> str:
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Display user profile"""
+
     try:
         user_id = update.effective_user.id
+        if await is_banned(user_id):
+            await update.message.reply_text("🚫 Your access has been revoked")
+            return ConversationHandler.END
         profile = get_profile(user_id)
         if profile:
             fullname, email, phone, country, registration_date = profile
@@ -945,7 +970,125 @@ def get_profile(telegram_id: int) -> tuple:
         return None
     finally:
         conn.close()
-    
+
+async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ban a user from using the bot"""
+    admin = update.effective_user
+    if str(admin.id) != ADMIN_TELEGRAM_ID:
+        await update.message.reply_text("🚫 Access denied!")
+        return
+
+    # Extract user ID from message (could be reply or direct input)
+    # target = None
+    # if update.message.reply_to_message:
+    #     target = update.message.reply_to_message.from_user.strip()
+    if context.args:
+        try:
+            target = " ".join(context.args).strip()
+        except ValueError:
+            await update.message.reply_text("Usage: /banuser <fullname> or reply to Users's message")
+            return
+    else:
+        await update.message.reply_text("Usage: /banuser <fullname> or reply to Users's message")
+        return
+
+    conn = get_conn()
+    try:
+        c = conn.cursor()
+        # Ban Client
+        c.execute("""
+            SELECT telegram_id FROM users
+            WHERE is_banned = False And full_name = %s
+        """, (target,))
+        check = c.fetchone()
+        if check:
+            c.execute("""
+                UPDATE users 
+                SET is_banned = True 
+                WHERE full_name = %s
+            """, (target,))
+            if c.rowcount == 0:
+                await update.message.reply_text("❌ User not found in database")
+                return
+                
+            conn.commit()
+            await update.message.reply_text(f"✅ User {target} has been banned")
+            
+            # Notify banned user if possible
+            c.execute("""
+                SELECT telegram_id FROM users
+                WHERE full_name = %s
+            """, (target,))
+            user_data = c.fetchone()
+            if user_data and user_data[0]:
+                await context.bot.send_message(
+                    chat_id=user_data[0],
+                    text="🚫 Your access to this bot has been revoked"
+                )
+        else:
+            await update.message.reply_text("❌ User Already revoked")
+            return
+    except Exception as e:
+        logger.error(f"Ban notification failed: {str(e)}")
+            
+    finally:
+        conn.close()
+
+async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin = update.effective_user
+    if str(admin.id) != ADMIN_TELEGRAM_ID:
+        await update.message.reply_text("🚫 Access denied!")
+        return
+
+    if context.args:
+        target_fullname = " ".join(context.args).strip()
+    else:
+        await update.message.reply_text("Usage: /unbanuser <full name>")
+        return
+
+    conn = get_conn()
+    try:
+        c = conn.cursor()
+        c.execute("""
+            SELECT telegram_id FROM users
+            WHERE is_banned = True And full_name = %s 
+        """, (target_fullname,))
+        check = c.fetchone()
+        if check:
+            c = conn.cursor()
+            c.execute("""
+                UPDATE users 
+                SET is_banned = False 
+                WHERE full_name = %s
+            """, (target_fullname,))
+            
+            if c.rowcount == 0:
+                await update.message.reply_text("❌ User not found in database")
+                return
+                
+            conn.commit()
+            await update.message.reply_text(f"✅ User '{target_fullname}' has been unbanned")
+            
+            c.execute("""
+                SELECT telegram_id FROM users
+                WHERE full_name = %s
+            """, (target_fullname,))
+            user_data = c.fetchone()
+            if user_data and user_data[0]:
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_data[0],
+                        text="✅ Your access to this bot has been restored"
+                    )
+                except Exception as e:
+                    logger.error(f"Unban notification failed: {str(e)}")
+        else:
+            await update.message.reply_text("❌ User Already restored")
+            return
+    finally:
+        conn.close()
+                
+        
 def main() -> None:
     """Configure and start the bot with comprehensive error handling"""
     pid_file = Path("bot.pid")
@@ -993,7 +1136,9 @@ def main() -> None:
                 MessageHandler(filters.Regex(r"^📋 My Profile$"), profile_command),
                 MessageHandler(filters.Regex(r"^🗑 Delete  ALL Channel$"), delete_channel_admin),
                 MessageHandler(filters.Regex(r"^🚫 Ban Client$"), ban_client),
-                MessageHandler(filters.Regex(r"^✅ UnBan User$"), unban_client)
+                MessageHandler(filters.Regex(r"^✅ UnBan Client$"), unban_client),
+                MessageHandler(filters.Regex(r"^🚫 Ban User$"), ban_user),
+                MessageHandler(filters.Regex(r"^✅ UnBan User$"), unban_user)
             ],
             states={
                 "AWAIT_CHANNEL_URL": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)],
@@ -1034,8 +1179,10 @@ def main() -> None:
             admin_conv,
             MessageHandler(filters.Regex(r"^👑 Admin Panel$"), handle_admin_panel),
             MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler),
-            CommandHandler("ban", ban_client),
-            CommandHandler("unban", unban_client),
+            CommandHandler("banclient", ban_client),
+            CommandHandler("unbanclient", unban_client),
+            CommandHandler("banuser", ban_user),
+            CommandHandler("unbanuser", unban_user),
             CommandHandler("mychannels", list_channels)
         ]
 
@@ -1048,7 +1195,7 @@ def main() -> None:
                 c.execute("SELECT is_banned FROM clients WHERE telegram_id = %s", (telegram_id,))
                 result = c.fetchone()
                 return bool(result and result[0] == 1)
-            except sqlite3.Error as e:
+            except psycopg2.Error as e:
                 logger.error(f"Ban check failed: {str(e)}")
                 return False
             finally:
