@@ -118,6 +118,7 @@ def get_allowed_links(telegram_id: int) -> list:
                     LEFT JOIN user_link_status uls 
                         ON l.id = uls.link_id AND uls.telegram_id = %s
                     WHERE uls.processed IS NULL OR uls.processed = 0
+                    ORDER BY l.id
                 """
                 cursor.execute(query, (telegram_id,))
                 return cursor.fetchall()
@@ -364,14 +365,22 @@ async def send_links_page(chat_id: int, user_id: int, page: int, context: Contex
                 f"[🔗 YouTube Link]({yt_link})"
             )
             keyboard = [[InlineKeyboardButton("📸 Submit Image", callback_data=f"submit_{link_id}")]]
+
+            # await context.bot.send_message(
+            #     chat_id,
+            #     text,
+            #     reply_markup=InlineKeyboardMarkup(keyboard),
+            #     parse_mode="MarkdownV2"
+            # )
             
-            await context.bot.send_message(
+            
+            message = await context.bot.send_message(
                 chat_id,
                 text,
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="MarkdownV2"
             )
-            # store_message_id(link_id, message.message_id)
+            store_message_id(link_id, message.message_id)
 
         if total_pages > 1:
             buttons = []
@@ -414,32 +423,23 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
 ##########################
 #    Image Submission    #
 ##########################
-async def handle_submit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle image submission requests with message threading"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        user_id = query.from_user.id
-        
-        link_id = int(query.data.split("_")[1])
-        message_id = get_message_id(link_id)
-        description = get_link_description(link_id)
-        
-        if not message_id or not description:
-            await query.message.reply_text("❌ Link details missing")
-            return
-            
-        pending_submissions[user_id] = (link_id, description, message_id)
-        
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=f"📸 Submit image for: {description}",
-            reply_to_message_id=message_id
-        )
-        
-    except Exception as e:
-        logger.error(f"Submit error: {e}")
-        await query.message.reply_text("⚠️ Couldn't process request. Please try again.")
+# async def navigate_links(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+#     """Handle pagination navigation for links list"""
+#     try:
+#         query = update.callback_query
+#         await query.answer()
+#         user_id = query.from_user.id
+#         action, page_str = query.data.split('_')
+#         new_page = int(page_str)
+#         # Update user's current page
+#         user_pages[user_id] = new_page
+#       # Send updated page
+#         await send_links_page(query.message.chat_id, user_id, new_page, context)
+#         await query.message.delete()
+#     except Exception as e:
+#         logger.error(f"Pagination error: {e}")
+#         if 'query' in locals():
+#             await query.message.reply_text("⚠️ Couldn't load page. Please try again.")
 
 async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle image verification with threaded replies"""
@@ -551,6 +551,28 @@ def escape_markdown_2(text: str) -> str:
     escape_chars = r'_*[]()~`>#-=|{}!'
     return ''.join(['\\' + char if char in escape_chars else char for char in text])
 
+async def handle_submit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle image submission requests with message threading"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        user_id = query.from_user.id    
+        link_id = int(query.data.split("_")[1])
+        message_id = get_message_id(link_id)
+        description = get_link_description(link_id)
+        if not message_id or not description:
+            await query.message.reply_text("❌ Link details missing")
+            return
+        pending_submissions[user_id] = (link_id, description, message_id)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"📸 Submit image for: {description}",
+            reply_to_message_id=message_id
+        )
+    except Exception as e:
+        logger.error(f"Submit error: {e}")
+        await query.message.reply_text("⚠️ Couldn't process request. Please try again.")
+        
 def get_paginated_links(user_id: int, page: int = 0, per_page: int = 5) -> tuple:
     """Get paginated list of links"""
     try:
