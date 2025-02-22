@@ -20,6 +20,7 @@ from telegram.ext import (
 )
 import psycopg2
 import ocr_processor
+import scan_image
 import image_processing
 import config
 import phonenumbers
@@ -462,7 +463,7 @@ async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYP
 
         verification_passed = False
         try:
-            if ocr_processor.check_text_in_image(image_path, req_text):
+            if scan_image.check_text_in_image(image_path, req_text):
                 verification_passed = True
             elif image_processing.check_text_in_image(image_path, req_text):
                 verification_passed = True
