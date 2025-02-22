@@ -611,7 +611,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 ##########################
 def main() -> None:
     """Start and configure the bot"""
-    application = ApplicationBuilder().token(config.TOKEN1).build()
+    application = ApplicationBuilder().token(config.TOKEN).build()
 
     # Configure conversation handler for registration
     conv_handler = ConversationHandler(
