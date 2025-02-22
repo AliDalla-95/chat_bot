@@ -38,56 +38,78 @@ def preprocess_image(image):
     
     return threshold
 
-def check_text_in_image(image_path, chosen_words):
-    """Process image and check for specified words"""
-    try:
-        # Open and preprocess image
-        with Image.open(image_path) as img:
-            width, height = img.size
-            
-            # Define ROI (left, top, right, bottom)
-            roi = (
-                0,                   # Start from left edge
-                int(height * 0.1),    # Start 10% from top
-                int(width * 0.8),     # End 80% from left
-                int(height * 0.9)     # End 90% from top
-            )
-            
-            cropped = img.crop(roi)
-            processed = preprocess_image(cropped)
-            
-            # Perform OCR with multiple languages
-            extracted_text = pytesseract.image_to_string(
-                processed,
-                lang='eng+ara+rus',  # English, Arabic, Russian
-                config='--psm 6 --oem 3'
-            )
+def check_text_in_image(image_path,chosen_words,roi_coordinates: tuple = (0.0, 0.1, 0.8, 0.5)) -> bool:
+    
+    """
+    Processes image and checks for specified words
+    
+    :param image_path: Path to the image file
+    :param chosen_words: List of words to search for
+    :param roi_coordinates: Region of interest (left, top, right, bottom) ratios
+    :return: True if all words are found, False otherwise
+    """
+    
+    
+    print(f"{image_path} and {chosen_words}")
 
-        logger.debug("Extracted text:\n%s", extracted_text)
-        
+    try:
+        # Validate inputs
+        if not isinstance(chosen_words, (list, str)):
+            raise ValueError("chosen_words must be list or string")
+            
+        # Convert to list if single string
         if isinstance(chosen_words, str):
             chosen_words = [chosen_words]
 
-        # Check for required words
-        for word in chosen_words:
-            pattern = re.compile(r'\b' + re.escape(word) + r'\b', 
-                                flags=re.IGNORECASE | re.UNICODE)
-            if not pattern.search(extracted_text):
-                return False
+        with Image.open(image_path) as img:
+            width, height = img.size
+            
+            # Calculate ROI coordinates
+            left = int(width * roi_coordinates[0])
+            top = int(height * roi_coordinates[1])
+            right = int(width * roi_coordinates[2])
+            bottom = int(height * roi_coordinates[3])
+            
+            # Crop and process image
+            cropped = img.crop((left, top, right, bottom))
+            processed = preprocess_image(cropped)
+            
+            # OCR processing
+            extracted_text = pytesseract.image_to_string(
+                processed,
+                lang='eng',  # Multiple languages
+                config='--psm 6 --oem 3'
+            )
+            
+            logger.debug(f"OCR results for {image_path}:\n{extracted_text}")
+            print(f"{extracted_text}")
 
-        # Verify subscription text in multiple languages
-        subscription_pattern = re.compile(
-            r'\b(Subscribed|تم الاشتراك|Вы подписаны)\b',
-            flags=re.IGNORECASE | re.UNICODE
-        )
-        
-        if not subscription_pattern.search(extracted_text):
-            return False
+            # Build regex patterns
+            keywords_pattern = '|'.join(map(re.escape, chosen_words))
+            word_pattern = re.compile(
+                rf'\b({keywords_pattern})\b',
+                flags=re.IGNORECASE
+            )
+            
+            subscription_pattern = re.compile(
+                r'\b(subscribed|subscrived|subsoribed)\b',
+                flags=re.IGNORECASE
+            )
 
-        return True
+            # Check matches
+            has_words = word_pattern.search(extracted_text) is not None
+            has_subscription = subscription_pattern.search(extracted_text) is not None
+            
+            return has_words and has_subscription
 
+    except FileNotFoundError:
+        logger.error(f"Image not found: {image_path}")
+        return False
+    except Image.UnidentifiedImageError:
+        logger.error(f"Invalid image format: {image_path}")
+        return False
     except Exception as e:
-        logger.error("Processing error: %s", str(e))
+        logger.error(f"Error processing {image_path}: {str(e)}", exc_info=True)
         return False
 
 def start_monitoring(path_to_watch):
@@ -105,9 +127,21 @@ def start_monitoring(path_to_watch):
 
 if __name__ == "__main__":
     # Example usage
-    test_image = "test_image.jpg"
-    if check_text_in_image(test_image, ["Special", "Offer"]):
-        print("Required text found!")
+    test_image = "test.jpg"
+    chosen_words = ["Sony Pictures Releasing UK"]
     
-    # Start monitoring folder
-    start_monitoring("./watch_folder")
+    # # تشغيل الفحص
+    # result = check_text_in_image(test_image, chosen_words)
+    
+    # # عرض النتيجة
+    # if result:
+    #     print("✅ النص المطلوب موجود في الصورة!")
+    #     # نقل الصورة في حالة النجاح
+    #     os.rename(test_image, f"processed_images/success_{os.path.basename(test_image)}")
+    # else:
+    #     print("❌ النص المطلوب غير موجود")
+    #     # نقل الصورة في حالة الفشل
+    #     os.rename(test_image, f"processed_images/failed_{os.path.basename(test_image)}")
+    
+    # # Start monitoring folder
+    # start_monitoring("./watch_folder")

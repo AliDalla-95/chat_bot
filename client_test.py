@@ -254,6 +254,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
 
                         channel_id = channel['id']
                         channel_name = channel['snippet']['title']
+                        print(f"{channel_name}")
                         channel_name = filter_non_arabic_words(channel_name,url)
                         break
 
@@ -375,26 +376,67 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 
-def filter_non_arabic_words(text, url):    
-    # Regex to match only English words and spaces
-    english_re = re.compile(r'[a-zA-Z\s]+')
+# def filter_non_arabic_words(text, url):    
+#     # Regex to match only English words and spaces
+#     english_re = re.compile(r'\b[a-zA-Z0-9]+\b(?:\s+[a-zA-Z0-9]+\b)*')
     
-    # Find all matching English parts
-    matches = english_re.findall(text)
+#     # Find all matching English parts
+#     matches = english_re.findall(text)
     
-    # Join them into a single string and remove extra spaces
-    filtered_text = ' '.join(''.join(matches).split())
+#     # Join them into a single string and remove extra spaces
+#     filtered_text = ' '.join(''.join(matches).split())
 
-    # If no English words are found, check for @ in URL
-    if not filtered_text.strip():
-        at_match = re.search(r'@([a-zA-Z0-9_]+)', url)
-        if at_match:
-            return at_match.group(1)  # Return the part after @
-        else:
-            return text  # Return the original text if no @ is found
+#     # If no English words are found, check for @ in URL
+#     if not filtered_text.strip():
+#         at_match = re.search(r'@([a-zA-Z0-9_]+)', url)
+#         if at_match:
+#             return at_match.group(1)  # Return the part after @
+#         else:
+#             return text  # Return the original text if no @ is found
 
+#     return filtered_text
+
+
+#the best
+def filter_non_arabic_words(text: str, url: str) -> str:
+    """
+    Filters text to keep only English words, numbers, and spaces
+    - Returns extracted content if found
+    - Falls back to @username from URL if no English content
+    - Returns original text as last resort
+    
+    :param text: Input text to filter
+    :param url: URL for fallback extraction
+    :return: Filtered text according to rules
+    """
+    
+    # Regex explanation:
+    # - r'^[a-zA-Z0-9 ]+$': Match entire string containing only:
+    #   - a-z (lowercase English letters)
+    #   - A-Z (uppercase English letters)
+    #   - 0-9 (numbers)
+    #   - Spaces
+    # - The '^' and '$' ensure full string match
+    english_pattern = re.compile(r'^[a-zA-Z0-9 ]+$')
+    
+    # 1. Split text into potential segments
+    segments = text.split()
+    
+    # 2. Filter valid English segments
+    valid_segments = [
+        segment for segment in segments 
+        if english_pattern.match(segment)
+    ]
+    
+    # 3. Reconstruct filtered text with single spaces
+    filtered_text = ' '.join(valid_segments)
+    
+    # 4. Fallback to URL @username if no valid content
+    if not filtered_text:
+        username_match = re.search(r'@([a-zA-Z0-9_]+)', url)
+        return username_match.group(1) if username_match else text
+    
     return filtered_text
-
 
 # def filter_non_arabic_words(text):
 #     # This regex will help us detect if a word contains any Arabic character.

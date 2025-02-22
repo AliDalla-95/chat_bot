@@ -1,4 +1,5 @@
 import os
+import re
 from signal import SIGINT, SIGTERM
 import logging
 from datetime import datetime
@@ -120,7 +121,7 @@ def get_allowed_links(telegram_id: int) -> list:
                     LEFT JOIN user_link_status uls 
                         ON l.id = uls.link_id AND uls.telegram_id = %s
                     WHERE uls.processed IS NULL OR uls.processed = 0
-                    ORDER BY l.id
+                    ORDER BY l.id DESC
                 """
                 cursor.execute(query, (telegram_id,))
                 return cursor.fetchall()
@@ -443,6 +444,21 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
 #         if 'query' in locals():
 #             await query.message.reply_text("⚠️ Couldn't load page. Please try again.")
 
+def process_text(req_text):
+    # Extract all words (alphanumeric + underscores)
+    words = re.findall(r'\b\w+\b', req_text)
+    
+    # Case 1: No words found
+    if not words:
+        return "No valid words found"
+    
+    # Case 2: Only one word
+    if len(words) == 1:
+        return words[0]
+    
+    # Case 3: Two or more words
+    return words[0] + " " + words[1]
+
 async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle image verification with threaded replies"""
     try:
@@ -452,6 +468,10 @@ async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         link_id, req_text, msg_id = pending_submissions[user_id]
+        # print(f"{req_text} and {link_id}")
+        # cleaned_text = re.sub(r'[^\w\s]', '', req_text)
+        # words = re.findall(r'\b\w+\b', req_text)
+        text_finall = process_text(req_text)
         photo_file = await update.message.photo[-1].get_file()
         image_path = f"temp_{user_id}_{link_id}.jpg"
         
@@ -463,7 +483,7 @@ async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYP
 
         verification_passed = False
         try:
-            if scan_image.check_text_in_image(image_path, req_text):
+            if scan_image.check_text_in_image(image_path, text_finall):
                 verification_passed = True
             elif image_processing.check_text_in_image(image_path, req_text):
                 verification_passed = True
