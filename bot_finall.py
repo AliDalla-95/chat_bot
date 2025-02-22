@@ -232,6 +232,7 @@ async def process_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         email = update.message.text.strip()
         if not email or '@' not in email or '.' not in email or len(email) > 100:
             raise ValueError("Invalid email format")
+            return
             
         context.user_data['email'] = email
         
@@ -556,9 +557,17 @@ async def handle_submit_callback(update: Update, context: ContextTypes.DEFAULT_T
     try:
         query = update.callback_query
         await query.answer()
-        user_id = query.from_user.id    
+        user_id = query.from_user.id
+        allowed_links = get_allowed_links(user_id)
+        if not allowed_links:
+            await query.message.reply_text("⚠️ You have no available links.")
+            return   
         link_id = int(query.data.split("_")[1])
         message_id = get_message_id(link_id)
+        # Verify the link is in the allowed list
+        if not any(link[0] == link_id for link in allowed_links):
+            await query.message.reply_text("⚠️ This link is no longer available for submission.")
+            return
         description = get_link_description(link_id)
         if not message_id or not description:
             await query.message.reply_text("❌ Link details missing")

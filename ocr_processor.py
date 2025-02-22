@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class FreeOCRProcessor:
     def __init__(self):
         self.base_url = "https://api.ocr.space/parse/image"
-        self.public_key = "K89090742288957"  # Public demo key
+        self.public_key = "K85958377488957"  # Public demo key
         self.max_retries = 3
         self.retry_delay = 5  # seconds
         self.hourly_limit = 300
