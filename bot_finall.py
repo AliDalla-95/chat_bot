@@ -1,4 +1,5 @@
 import os
+from signal import SIGINT, SIGTERM
 import logging
 from datetime import datetime
 from telegram import (
@@ -233,7 +234,6 @@ async def process_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         email = update.message.text.strip()
         if not email or '@' not in email or '.' not in email or len(email) > 100:
             raise ValueError("Invalid email format")
-            return
             
         context.user_data['email'] = email
         
@@ -508,12 +508,15 @@ async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYP
 ##########################
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Global error handler for all uncaught exceptions"""
-    logger.error("Unhandled exception:", exc_info=context.error)
-    if update.effective_message:
-        await update.effective_message.reply_text(
-            "⚠️ An unexpected error occurred. Please try again later."
-        )
-
+    try:
+        logger.error("Unhandled exception:", exc_info=context.error)
+        
+        if update is not None and update.effective_message:
+            await update.effective_message.reply_text(
+                "⚠️ An unexpected error occurred. Please try again later."
+            )
+    except Exception as e:
+        logger.error(f"Error in error handler: {e}")
 ##########################
 #    Pagination Handler  #
 ##########################
@@ -650,11 +653,13 @@ def main() -> None:
 
     for handler in handlers:
         application.add_handler(handler)
-    
+    application.add_handler(MessageHandler(filters.ALL, lambda u,c: None))  # Workaround
     application.add_error_handler(lambda u,c: error_handler(u,c))
 
     # Start bot
-    application.run_polling()
-
+    application.run_polling(
+        close_loop=False,
+        stop_signals=(SIGINT, SIGTERM)
+    )
 if __name__ == '__main__':
     main()
