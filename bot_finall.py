@@ -22,7 +22,7 @@ from telegram.ext import (
 )
 import psycopg2
 import ocr_processor
-import scan_image
+import scan_image3
 import image_processing
 import config
 import phonenumbers
@@ -483,13 +483,13 @@ async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYP
 
         verification_passed = False
         try:
-            if scan_image.check_text_in_image(image_path, text_finall):
-                verification_passed = True
-            elif image_processing.check_text_in_image(image_path, req_text):
+            if scan_image3.check_text_in_image(image_path, text_finall):
                 verification_passed = True
         except Exception as e:
             logger.error(f"Image processing error: {e}")
-
+        teeeest = scan_image3.check_text_in_image(image_path, text_finall)
+        # print(f"teeeest{teeeest}")
+        # print(f"verification_passed: {verification_passed}")
         if verification_passed:
             mark_link_processed(user_id, link_id)
             update_user_points(user_id)
