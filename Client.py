@@ -658,7 +658,7 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         ["🚫 Ban Client", "✅ UnBan Client"],
         ["🚫 Ban User", "✅ UnBan User"],
-        ["🗑 Delete Channel", "🗑 Delete  ALL Channele"], # Updated buttons
+        ["🗑 Delete Channel", "🗑 Delete  All Channels"], # Updated buttons
         ["🔙 Main Menu"]
     ]
     await update.message.reply_text(
@@ -1134,7 +1134,7 @@ def main() -> None:
             entry_points=[
                 MessageHandler(filters.Regex(r"^🗑 Delete Channel"), delete_channel),
                 MessageHandler(filters.Regex(r"^📋 My Profile$"), profile_command),
-                MessageHandler(filters.Regex(r"^🗑 Delete  ALL Channel$"), delete_channel_admin),
+                MessageHandler(filters.Regex(r"^🗑 Delete  All Channels$"), delete_channel_admin),
                 MessageHandler(filters.Regex(r"^🚫 Ban Client$"), ban_client),
                 MessageHandler(filters.Regex(r"^✅ UnBan Client$"), unban_client),
                 MessageHandler(filters.Regex(r"^🚫 Ban User$"), ban_user),

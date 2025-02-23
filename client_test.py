@@ -333,6 +333,18 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 ex,
             ))
+            c.execute("""
+                INSERT INTO links_success 
+                (added_by, youtube_link, description, channel_id, submission_date, adder) OVERRIDING SYSTEM VALUE
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (
+                user.id,
+                url,
+                channel_name,
+                channel_id,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ex,
+            ))
             # c.execute("""
             #     SELECT id 
             #     FROM links 
@@ -698,7 +710,7 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         ["🚫 Ban Client", "✅ UnBan Client"],
         ["🚫 Ban User", "✅ UnBan User"],
-        ["🗑 Delete Channel", "🗑 Delete  ALL Channele"], # Updated buttons
+        ["🗑 Delete Channel", "🗑 Delete  All Channels"], # Updated buttons
         ["🔙 Main Menu"]
     ]
     await update.message.reply_text(
@@ -758,7 +770,6 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result_id_for_link = result_id[0]
         c.execute("DELETE FROM links WHERE youtube_link = %s and added_by = %s", (url,update.effective_user.id,))
         c.execute("DELETE FROM user_link_status WHERE link_id = %s", (result_id_for_link,))
-        c.execute("DELETE FROM likes WHERE url = %s and user_id = %s", (url,update.effective_user.id,))
         conn.commit()
         await update.message.reply_text(
             f"✅ Channel deleted:\n"
@@ -816,7 +827,6 @@ async def confirm_delete_admin(update: Update, context: ContextTypes.DEFAULT_TYP
             return ConversationHandler.END
         result_id_for_link = result_id[0]
         c.execute("DELETE FROM user_link_status WHERE link_id = %s", (result_id_for_link,))
-        c.execute("DELETE FROM likes WHERE url = %s and adder = %s", (url,adder,))
         c.execute("DELETE FROM links WHERE youtube_link = %s and adder = %s", (url, adder))
         conn.commit()
         await update.message.reply_text(
@@ -1174,7 +1184,7 @@ def main() -> None:
             entry_points=[
                 MessageHandler(filters.Regex(r"^🗑 Delete Channel"), delete_channel),
                 MessageHandler(filters.Regex(r"^📋 My Profile$"), profile_command),
-                MessageHandler(filters.Regex(r"^🗑 Delete  ALL Channel$"), delete_channel_admin),
+                MessageHandler(filters.Regex(r"^🗑 Delete  All Channels$"), delete_channel_admin),
                 MessageHandler(filters.Regex(r"^🚫 Ban Client$"), ban_client),
                 MessageHandler(filters.Regex(r"^✅ UnBan Client$"), unban_client),
                 MessageHandler(filters.Regex(r"^🚫 Ban User$"), ban_user),
