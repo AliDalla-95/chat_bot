@@ -1,163 +1,65 @@
-import os
-import time
-import logging
-import re
 import numpy as np
-import cv2
-from PIL import Image, ImageFilter 
+from PIL import Image
 import pytesseract
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+import spacy
+import re
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-class OCRHandler(FileSystemEventHandler):
-    VALID_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.bmp')
-    
-    def __init__(self):
-        os.makedirs('outputs', exist_ok=True)
-        
-    def on_created(self, event):
-        if not event.is_directory:
-            file_path = event.src_path
-            if file_path.lower().endswith(self.VALID_EXTENSIONS):
-                logger.info("Processing new file: %s", file_path)
-                result = check_text_in_image(file_path, ["Subscribed"])
-                if result:
-                    logger.info("Valid subscription found in: %s", file_path)
-                else:
-                    logger.warning("No valid subscription found in: %s", file_path)
+# Load spaCy model
+nlp = spacy.load("en_core_web_sm")
 
 def preprocess_image(image):
     """Enhance image for better OCR results"""
-    # Convert to grayscale
     gray = image.convert('L')
-    
-    # Apply thresholding
     threshold = gray.point(lambda x: 0 if x < 180 else 255, '1')
-    
     return threshold
 
-
-def preprocess_image2(image):
-    # تحويل إلى تدرج الرمادي مع تحسين التباين
-    gray = image.convert('L')
-    # تطبيق مرشح لإزالة الضوضاء
-    enhanced = gray.filter(ImageFilter.MedianFilter(size=3))
-    # عتبة متكيفة
-    threshold = cv2.adaptiveThreshold(
-        np.array(enhanced), 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY, 11, 2
-    )
-    return Image.fromarray(threshold)
-
-def check_text_in_image(image_path,chosen_words,roi_coordinates: tuple = (0.0, 0.1, 0.8, 0.5)) -> bool:
-    
-    """
-    Processes image and checks for specified words
-    
-    :param image_path: Path to the image file
-    :param chosen_words: List of words to search for
-    :param roi_coordinates: Region of interest (left, top, right, bottom) ratios
-    :return: True if all words are found, False otherwise
-    """
+def check_text_in_image(image_path, chosen_words) -> bool:
+    # Define subscription variants (lowercase)
+    chosen_words1 = chosen_words
+    chosen_words2 = chosen_words + ".com"
+    chosen_words3 = "@" + chosen_words
+    chosen_words4 = chosen_words + "HI"
+    chosen_words5 = chosen_words.strip().lower()
+    chosen_words6 = chosen_words3.strip().lower()
+    chosen_words7 = re.sub(r'\s*TV$', '', chosen_words, flags=re.IGNORECASE)
+    print(f"{chosen_words}")
+    chosen_words_all = {chosen_words1,chosen_words2,chosen_words3,chosen_words4,chosen_words5,chosen_words6,chosen_words7}
     
     
-    print(f"{image_path} and {chosen_words}")
+    print(f"chosen_words_all{chosen_words_all}")
+    subscription_variants = {"subscribed", "subscrived", "subsoribed","subscrined", "subscríbed", "subscribd","subscríbed", "subscrïbed", "subscríbd"}
+    roi_coordinates = (0.0, 0.1, 0.8, 0.5)
+    with Image.open(image_path) as img:
+        # Calculate ROI coordinates
+        width, height = img.size
+        left = int(width * roi_coordinates[0])
+        top = int(height * roi_coordinates[1])
+        right = int(width * roi_coordinates[2])
+        bottom = int(height * roi_coordinates[3])
+        
+        # Crop and process image
+        cropped = img.crop((left, top, right, bottom))
+        processed = preprocess_image(cropped)
+        
+        # OCR processing
+        extracted_text = pytesseract.image_to_string(
+            processed,
+            lang='eng',
+            config='--psm 6 --oem 3'
+        )
 
-    try:
-        # Validate inputs
-        if not isinstance(chosen_words, (list, str)):
-            raise ValueError("chosen_words must be list or string")
-            
-        # Convert to list if single string
-        if isinstance(chosen_words, str):
-            chosen_words = [chosen_words]
+        # Process text with spaCy
+        doc = nlp(extracted_text.lower())
+        
+        # Extract all tokens (words)
+        tokens = [token.text for token in doc]
+        print(f"tokens{tokens}")
+        # Prepare target words (lowercase)
+        target_chosen = {word.strip().lower() for word in chosen_words_all}
+        target_subscription = subscription_variants
+        print(f"target_chosen{target_chosen}")
+        # Check for matches
+        has_words = any(token in target_chosen for token in tokens)
+        has_subscription = any(token in target_subscription for token in tokens)
 
-        with Image.open(image_path) as img:
-            width, height = img.size
-            
-            # Calculate ROI coordinates
-            left = int(width * roi_coordinates[0])
-            top = int(height * roi_coordinates[1])
-            right = int(width * roi_coordinates[2])
-            bottom = int(height * roi_coordinates[3])
-            
-            # Crop and process image
-            cropped = img.crop((left, top, right, bottom))
-            processed = preprocess_image(cropped)
-            # processed_filter = preprocess_image2(cropped)
-            # OCR processing
-            extracted_text = pytesseract.image_to_string(
-                processed,
-                lang='eng',  # Multiple languages
-                config='--psm 6 --oem 3'
-            )
-            
-            logger.debug(f"OCR results for {image_path}:\n{extracted_text}")
-            print(f"{extracted_text}")
-
-            # Build regex patterns
-            keywords_pattern = '|'.join(map(re.escape, chosen_words))
-            word_pattern = re.compile(
-                rf'\b({keywords_pattern})\b',
-                flags=re.IGNORECASE
-            )
-            
-            subscription_pattern = re.compile(
-                r'\b(subscribed|subscrived|subsoribed|subscrined)\b',
-                flags=re.IGNORECASE
-            )
-
-            # Check matches
-            has_words = word_pattern.search(extracted_text) is not None
-            has_subscription = subscription_pattern.search(extracted_text) is not None
-            
-            return has_words and has_subscription
-
-    except FileNotFoundError:
-        logger.error(f"Image not found: {image_path}")
-        return False
-    except Image.UnidentifiedImageError:
-        logger.error(f"Invalid image format: {image_path}")
-        return False
-    except Exception as e:
-        logger.error(f"Error processing {image_path}: {str(e)}", exc_info=True)
-        return False
-
-def start_monitoring(path_to_watch):
-    observer = Observer()
-    event_handler = OCRHandler()
-    observer.schedule(event_handler, path_to_watch, recursive=False)
-    observer.start()
-    
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        observer.stop()
-    observer.join()
-
-if __name__ == "__main__":
-    # Example usage
-    test_image = "test.jpg"
-    chosen_words = ["Sony Pictures Releasing UK"]
-    
-    # # تشغيل الفحص
-    # result = check_text_in_image(test_image, chosen_words)
-    
-    # # عرض النتيجة
-    # if result:
-    #     print("✅ النص المطلوب موجود في الصورة!")
-    #     # نقل الصورة في حالة النجاح
-    #     os.rename(test_image, f"processed_images/success_{os.path.basename(test_image)}")
-    # else:
-    #     print("❌ النص المطلوب غير موجود")
-    #     # نقل الصورة في حالة الفشل
-    #     os.rename(test_image, f"processed_images/failed_{os.path.basename(test_image)}")
-    
-    # # Start monitoring folder
-    # start_monitoring("./watch_folder")
+        return has_words and has_subscription
