@@ -283,10 +283,8 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             if existing:
                 existing_id, existing_name = existing
                 message = []
-                if existing_id == channel_id:
-                    message.append("⚠️ You already submitted this channel ID")
-                if existing_name == channel_name:
-                    message.append("⚠️ You already submitted a channel with this name")
+                if existing_id == channel_id and existing_name == channel_name:
+                    message.append("⚠️ You already submitted this Channel ID and Channel Name With A Deferent URL Remove URL and Continue")
                 await update.message.reply_text("\n".join(message))
                 return ConversationHandler.END
 
