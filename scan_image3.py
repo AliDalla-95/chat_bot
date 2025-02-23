@@ -65,6 +65,9 @@ def check_text_in_image(image_path, chosen_words) -> bool:
             for token in tokens 
             for target in target_chosen
         )
+        # print(f"target{target}")
+        print(f"tokens{tokens}")
+        print(f"target_chosen{target_chosen}")
 
         has_subscription = any(
             variant in token 
