@@ -254,7 +254,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
 
                         channel_id = channel['id']
                         channel_name = channel['snippet']['title']
-                        print(f"{channel_name}")
+                        # print(f"{channel_name}")
                         channel_name = filter_non_arabic_words(channel_name,url)
                         break
 
