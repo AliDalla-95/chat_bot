@@ -254,19 +254,21 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
 
                         channel_id = channel['id']
                         channel_name = channel['snippet']['title']
-                        # print(f"{channel_name}")
+                        print(f"{channel_name}")
                         channel_name = filter_non_arabic_words(channel_name,url)
+                        # print(f"{channel_name}")
+                        # print(f"{channel_id}")
+                        # print(f"{url}")
                         break
 
                 except HttpError as e:
-                    logger.error(f"YouTube API Error: {str(e)}")
+                    logger.error(f"YouTube API Errorw: {str(e)}")
                     await update.message.reply_text("❌ Error verifying channel. Please try later.")
                     return ConversationHandler.END
 
         if not channel_id or not channel_name:
             await update.message.reply_text("❌ Could not verify YouTube channel. Check URL and try again.")
             return ConversationHandler.END
-
         # Database checks
         conn = get_conn()
         try:
@@ -278,8 +280,8 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
                 WHERE added_by = %s 
                 AND (channel_id = %s OR description = %s)
             """, (user.id, channel_id, channel_name))
-            
             existing = c.fetchone()
+
             if existing:
                 existing_id, existing_name = existing
                 message = []
@@ -287,8 +289,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
                     message.append("⚠️ You already submitted this Channel ID and Channel Name With A Deferent URL Remove URL and Continue")
                 await update.message.reply_text("\n".join(message))
                 return ConversationHandler.END
-
-
+            
             try:
                 cc = conn.cursor()
                 cc.execute("""
@@ -367,6 +368,10 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             #     link_id_id
             # ))
             conn.commit()
+            # print(f"{channel_name}")
+            # print(f"{channel_id}")
+            # print(f"{url}")
+
             await update.message.reply_text(
                 f"✅ Channel registered successfully!\n\n"
                 f"📛 Name: {channel_name}\n"
@@ -378,7 +383,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             conn.close()
 
     except Exception as e:
-        logger.error(f"Channel processing error: {str(e)}")
+        logger.error(f"Channel processing errors: {str(e)}")
         await update.message.reply_text("❌ An error occurred. Please try again.")
 
     return ConversationHandler.END
@@ -769,7 +774,7 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
         result_id_for_link = result_id[0]
         c.execute("DELETE FROM links WHERE youtube_link = %s and added_by = %s", (url,update.effective_user.id,))
-        c.execute("DELETE FROM user_link_status WHERE link_id = %s", (result_id_for_link,))
+        # c.execute("DELETE FROM user_link_status WHERE link_id = %s", (result_id_for_link,))
         conn.commit()
         await update.message.reply_text(
             f"✅ Channel deleted:\n"
@@ -826,7 +831,7 @@ async def confirm_delete_admin(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text("❌ Channel not found")
             return ConversationHandler.END
         result_id_for_link = result_id[0]
-        c.execute("DELETE FROM user_link_status WHERE link_id = %s", (result_id_for_link,))
+        # c.execute("DELETE FROM user_link_status WHERE link_id = %s", (result_id_for_link,))
         c.execute("DELETE FROM links WHERE youtube_link = %s and adder = %s", (url, adder))
         conn.commit()
         await update.message.reply_text(
