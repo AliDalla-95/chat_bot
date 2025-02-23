@@ -2,7 +2,9 @@ import os
 import time
 import logging
 import re
-from PIL import Image
+import numpy as np
+import cv2
+from PIL import Image, ImageFilter 
 import pytesseract
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -37,6 +39,20 @@ def preprocess_image(image):
     threshold = gray.point(lambda x: 0 if x < 180 else 255, '1')
     
     return threshold
+
+
+def preprocess_image2(image):
+    # تحويل إلى تدرج الرمادي مع تحسين التباين
+    gray = image.convert('L')
+    # تطبيق مرشح لإزالة الضوضاء
+    enhanced = gray.filter(ImageFilter.MedianFilter(size=3))
+    # عتبة متكيفة
+    threshold = cv2.adaptiveThreshold(
+        np.array(enhanced), 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY, 11, 2
+    )
+    return Image.fromarray(threshold)
 
 def check_text_in_image(image_path,chosen_words,roi_coordinates: tuple = (0.0, 0.1, 0.8, 0.5)) -> bool:
     
@@ -73,7 +89,7 @@ def check_text_in_image(image_path,chosen_words,roi_coordinates: tuple = (0.0, 0
             # Crop and process image
             cropped = img.crop((left, top, right, bottom))
             processed = preprocess_image(cropped)
-            
+            # processed_filter = preprocess_image2(cropped)
             # OCR processing
             extracted_text = pytesseract.image_to_string(
                 processed,
