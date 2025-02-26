@@ -51,11 +51,21 @@ logger = logging.getLogger(__name__)
 
 # ========== MENU SYSTEM ==========
 # ========== UPDATED MENU SYSTEM ==========
+
+
+
 MAIN_MENU = [
     ["📝 Register","Start"],
     ["🔍 Input Your YouTube URL Channel"],
     ["📋 My Profile"],  # Added new menu item
     ["📌 My Channels", "🗑 Delete Channel"]  # Added new menu item
+]
+
+MAIN_MENU_ar = [
+    ["التسجيل 📝","بدء 👋"],
+    ["أدخل رابط القناة للتحقق منه 🔍"],
+    ["الملف الشخصي 📋"],  # Added new menu item
+    ["قنواتي التي أدخلتها 📌", "حذف قناة 🗑"]  # Added new menu item
 ]
 
 ADMIN_MENU = [
@@ -89,11 +99,14 @@ def put_conn(conn):
     connection_pool.putconn(conn)
 
 
-def get_menu(user_id: int) -> ReplyKeyboardMarkup:
+def get_menu(user_lang: str,user_id: int) -> ReplyKeyboardMarkup:
     """Return appropriate menu based on user status"""
     if str(user_id) == ADMIN_TELEGRAM_ID:
         return ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True)
-    return ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
+    if user_lang == 'ar':
+        return ReplyKeyboardMarkup(MAIN_MENU_ar, resize_keyboard=True)
+    else:
+        return ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
 
 async def is_registered(telegram_id: int) -> bool:
     """Check if user is registered"""
@@ -109,11 +122,14 @@ async def is_registered(telegram_id: int) -> bool:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command with dynamic menu"""
     user = update.effective_user
+    user_lang = update.effective_user.language_code or 'en'
     if await is_banned(user.id):
-        await update.message.reply_text("🚫 Your access has been revoked")
+        msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
+        await update.message.reply_text(msg)
         return ConversationHandler.END
-    menu = get_menu(user.id)
+    menu = get_menu(user_lang, user.id)
     # Auto-register admin if not in database
+    msg = " أهلا وسهلا  👋" if user_lang.startswith('ar') else "👋 Welcome"
     if str(user.id) == ADMIN_TELEGRAM_ID and not await is_registered(user.id):
         conn = get_conn()
         c = conn.cursor()
@@ -132,12 +148,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ))
         conn.commit()
         conn.close()
-        await update.message.reply_text(f"👋 Welcome {user.first_name}!",
+        await update.message.reply_text(f"{msg} {user.first_name}!",
         reply_markup=menu)
         return
     
     await update.message.reply_text(
-        f"👋 Welcome {user.first_name}!",
+        f"{msg} {user.first_name}!",
         reply_markup=menu
     )
 
@@ -145,41 +161,64 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Process menu button selections"""
     text = update.message.text
     user = update.effective_user
-    
-    if text == "📝 Register":
-        await handle_registration(update, context)
-    elif text == "🔍 Input Your YouTube URL Channel":
-        await handle_channel_verification(update, context)
-    elif text == "👑 Admin Panel":
-        await handle_admin_panel(update, context)
-    elif text == "📌 My Channels":  # New handler
-        await list_channels(update, context)
-    elif text == "📋 My Profile":
-        await profile_command(update, context)
-    elif text == "🔙 Main Menu":
-        await show_main_menu(update, user)
-    elif text == "Start":
-        await start(update, context)
+    user_lang = update.effective_user.language_code or 'en'
+    if user_lang.startswith('ar'):
+        if text == "التسجيل 📝":
+            await handle_registration(update, context)
+        elif text == "أدخل رابط القناة للتحقق منه 🔍":
+            await handle_channel_verification(update, context)
+        elif text == "👑 Admin Panel":
+            await handle_admin_panel(update, context)
+        elif text == "قنواتي التي أدخلتها 📌":  # New handler
+            await list_channels(update, context)
+        elif text == "الملف الشخصي 📋":
+            await profile_command(update, context)
+        elif text == "🔙 Main Menu":
+            await show_main_menu(update, user)
+        elif text == "بدء 👋":
+            await start(update, context)
+        else:
+            await update.message.reply_text("من فضلك اختر أمر من القائمة")
     else:
-        await update.message.reply_text("Please use the menu buttons")
+        if text == "📝 Register":
+            await handle_registration(update, context)
+        elif text == "🔍 Input Your YouTube URL Channel":
+            await handle_channel_verification(update, context)
+        elif text == "👑 Admin Panel":
+            await handle_admin_panel(update, context)
+        elif text == "📌 My Channels":  # New handler
+            await list_channels(update, context)
+        elif text == "📋 My Profile":
+            await profile_command(update, context)
+        elif text == "🔙 Main Menu":
+            await show_main_menu(update, user)
+        elif text == "Start":
+            await start(update, context)
+        else:
+            await update.message.reply_text("Please use the menu buttons")
 
 async def show_main_menu(update: Update, user):
     """Display the appropriate main menu"""
+    user_lang = update.effective_user.language_code or 'en'
     await update.message.reply_text(
         "Main Menu:",
-        reply_markup=get_menu(user.id)
+        reply_markup=get_menu(user_lang,user.id)
     )
 
 async def handle_registration(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start registration process"""
     user = update.effective_user
+    user_lang = update.effective_user.language_code or 'en'
     if await is_banned(user.id):
-        await update.message.reply_text("🚫 Your access has been revoked")
+        msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
+        await update.message.reply_text(msg)
         return ConversationHandler.END
     if await is_registered(user.id):
-        await update.message.reply_text("ℹ️ You're already registered!")
+        msg = " أنت بالفعل مسجل ℹ️" if user_lang.startswith('ar') else "ℹ️ You're already registered!"
+        await update.message.reply_text(msg)
         return
-    await update.message.reply_text("📝 Please enter your Google email address:")
+    msg = " من فضلك أدخل بريدك الإلكتروني لمتابعة التسجيل 📝" if user_lang.startswith('ar') else "📝 Please enter your Google email address:"
+    await update.message.reply_text(msg)
     return EMAIL
 
 # ========== YOUTUBE CHANNEL VERIFICATION ==========
@@ -188,7 +227,8 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         user = update.effective_user
         url = update.message.text.strip()
-        
+        user_lang = update.effective_user.language_code or 'en'
+
         # Validate URL format first
         if not re.match(r'^(https?://)?(www\.)?youtube\.com/', url, re.IGNORECASE):
             await update.message.reply_text("❌ Invalid YouTube URL format. Please try again.")
@@ -254,7 +294,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
 
                         channel_id = channel['id']
                         channel_name = channel['snippet']['title']
-                        print(f"{channel_name}")
+                        # print(f"{channel_name}")
                         channel_name = filter_non_arabic_words(channel_name,url)
                         # print(f"{channel_name}")
                         # print(f"{channel_id}")
@@ -267,7 +307,8 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
                     return ConversationHandler.END
 
         if not channel_id or not channel_name:
-            await update.message.reply_text("❌ Could not verify YouTube channel. Check URL and try again.")
+            msg = " لايمكن التحقق من رابط قناة اليوتيوب يجى إدخال الرابط الصحيح وإعادة المحاولة ❌" if user_lang.startswith('ar') else "❌ Could not verify YouTube channel. Check URL and try again."
+            await update.message.reply_text(msg)
             return ConversationHandler.END
         # Database checks
         conn = get_conn()
@@ -286,7 +327,8 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
                 existing_id, existing_name = existing
                 message = []
                 if existing_id == channel_id and existing_name == channel_name:
-                    message.append("⚠️ You already submitted this Channel ID and Channel Name With A Deferent URL Remove URL and Continue")
+                    msg = " يوجد مسبقا أسم قناة ومعرف آي دي مرتبطان بهذا الرابط يرجى التحقق أولا ثم إعادة المحاولة ⚠️" if user_lang.startswith('ar') else "⚠️ You already submitted this Channel ID and Channel Name With A Deferent URL Remove URL and Continue"
+                    message.append(msg)
                 await update.message.reply_text("\n".join(message))
                 return ConversationHandler.END
             
@@ -303,7 +345,8 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
                 ex = exit[0]
             except Exception as e:
                 logger.error(f"Channel processing error: {str(e)}")
-                await update.message.reply_text("❌ An error occurred. Please try again.")
+                msg = " حدث خطأ غير متوقع يرجى إعادة المحاولة لاحقا ❌" if user_lang.startswith('ar') else "❌ An error occurred. Please try again"
+                await update.message.reply_text(msg)
                 
 
             #     exit_name = exit
@@ -371,21 +414,28 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
             # print(f"{channel_name}")
             # print(f"{channel_id}")
             # print(f"{url}")
-
-            await update.message.reply_text(
-                f"✅ Channel registered successfully!\n\n"
-                f"📛 Name: {channel_name}\n"
-                f"🆔 ID: {channel_id}\n"
-                f"🔗 URL: {url}"
-            )
+            if user_lang.startswith('ar'):
+                await update.message.reply_text(
+                    f"✅ تمت عملية إضافة القناة بنجاح تام\n\n"
+                    f"📛 أسم القناة: {channel_name}\n"
+                    f"🆔 معرف القناة: {channel_id}\n"
+                    f"🔗 رابط القناة: {url}"
+                )
+            else:
+                await update.message.reply_text(
+                    f"✅ Channel registered successfully!\n\n"
+                    f"📛 Name: {channel_name}\n"
+                    f"🆔 ID: {channel_id}\n"
+                    f"🔗 URL: {url}"
+                )
             
         finally:
             conn.close()
 
     except Exception as e:
         logger.error(f"Channel processing errors: {str(e)}")
-        await update.message.reply_text("❌ An error occurred. Please try again.")
-
+        msg = " حدث خطأ غير متوقع يرجى إعادة المحاولة لاحقا ❌" if user_lang.startswith('ar') else "❌ An error occurred. Please try again"
+        await update.message.reply_text(msg)
     return ConversationHandler.END
 
 
@@ -477,14 +527,17 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is banned
+    user_lang = update.effective_user.language_code or 'en'
     if await is_banned(user.id):
-        await update.message.reply_text("🚫 Your access has been revoked")
+        msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
+        await update.message.reply_text(msg)
         return ConversationHandler.END
         
     try:
         # Check if user is registered
         if not await is_registered(user.id):
-            await update.message.reply_text("❌ Please Register First.")
+            msg = " من فضلك قم بالتسجيل أولا ❌" if user_lang.startswith('ar') else "❌ Please Register First."
+            await update.message.reply_text(msg)
             return
             
         conn = get_conn()
@@ -504,19 +557,30 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not channels:
-            await update.message.reply_text("📭 You haven't submitted any channels yet")
+            msg = " ليس لدي قنوات تمت إضافتها بعد 📭" if user_lang.startswith('ar') else "📭 You haven't submitted any channels yet"
+            await update.message.reply_text(msg)
             return
             
         response = ["📋 Your Submitted Channels:"]
         for idx, (name, url, channel_id, date, likes) in enumerate(channels, 1):
-            response.append(
-                f"{idx}. {name}\n"
-                f"🔗 {url}\n"
-                f"🆔 Channel ID: {channel_id}\n"
-                f"📅 Submitted: {date}\n"
-                f"❤️ Likes: {likes}\n"
-                f"{'-'*40}"
-            )
+            if user_lang.startswith('ar'):
+                response.append(
+                    f"{idx}. {name}\n"
+                    f"🔗 {url}\n"
+                    f"🆔 معرف القناة: {channel_id}\n"
+                    f"📅 تاريخ إضافتها: {date}\n"
+                    f"❤️ عدد الاشتراكات: {likes}\n"
+                    f"{'-'*40}"
+                )
+            else:
+                response.append(
+                    f"{idx}. {name}\n"
+                    f"🔗 {url}\n"
+                    f"🆔 Channel ID: {channel_id}\n"
+                    f"📅 Submitted: {date}\n"
+                    f"❤️ Likes: {likes}\n"
+                    f"{'-'*40}"
+                )
             
         # Split long messages to avoid Telegram message limits
         message = "\n\n".join(response)
@@ -528,37 +592,44 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"List channels error: {str(e)}")
-        await update.message.reply_text("❌ Error retrieving your channels")
+        msg = " حدث خطأ أثناء إضافة القناة ❌" if user_lang.startswith('ar') else "❌ Error retrieving your channels"
+        await update.message.reply_text(msg)
         
 
 # ========== REGISTRATION FLOW HANDLERS ==========
 async def email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Validate and store email"""
+    user_lang = update.effective_user.language_code or 'en'
     email = update.message.text
     if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
-        await update.message.reply_text("❌ Invalid email format. Try again:")
+        msg = " صيغة البريد الإلكتروني غير صحيحة يرجى إدخال بريدك الصحيح ❌" if user_lang.startswith('ar') else "❌ Invalid email format. Try again:"
+        await update.message.reply_text(msg)
         return EMAIL
     context.user_data["email"] = email
     # Create contact sharing keyboard
+    msg = " من فضلك قم بتأكيد رقم هاتفك للمتابعة 📱" if user_lang.startswith('ar') else "📱 Share Phone Number"
     contact_keyboard = ReplyKeyboardMarkup(
-        [[KeyboardButton("📱 Share Phone Number", request_contact=True)]],
+        [[KeyboardButton(msg, request_contact=True)]],
         resize_keyboard=True,
         one_time_keyboard=True
     )
-    
+    msg = "من فضلك قم بتأكيد رقم هاتفك عبر ضغط الزر في القائمة " if user_lang.startswith('ar') else "Please share your phone number using the button below:"
     await update.message.reply_text(
-        "Please share your phone number using the button below:",
+        msg,
         reply_markup=contact_keyboard
     )
     return PHONE
 
 async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle received contact information and determine country automatically"""
+    
+    user_lang = update.effective_user.language_code or 'en'
     contact = update.message.contact
     # datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     # Verify the contact belongs to the user
     if contact.user_id != update.effective_user.id:
-        await update.message.reply_text("❌ Please share your own phone number!")
+        msg = " من فضلك قم بتأكيد رقم هاتفك أولا ❌" if user_lang.startswith('ar') else "❌ Please share your own phone number!"
+        await update.message.reply_text(msg)
         return PHONE
     
     phone_number = "+" + contact.phone_number
@@ -568,7 +639,8 @@ async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     try:
         # Validate international format
         if not phone_number.startswith("+"):
-            raise ValueError("Phone number must include country code (e.g., +123456789)")
+            msg = "يجب أن يحتوي رقم الهاتف على أرقام فقط مسبوقة بإشارة +" if user_lang.startswith('ar') else "Phone number must include country code (e.g., +123456789)"
+            raise ValueError(msg)
             
         # Parse phone number to determine country
         parsed_number = phonenumbers.parse(phone_number, None)
@@ -577,11 +649,12 @@ async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         
     except (phonenumbers.NumberParseException, ValueError) as e:
         logger.error(f"Phone number error: {e}")
+        msg = "صيغة رقم الهاتف غير صحيحة يجب أن يحتوي رقم الهاتف على أرقام فقط مسبوقة بإشارة +" if user_lang.startswith('ar') else "❌ Invalid phone number format. Please share your contact using the button below and ensure it includes your country code (e.g., +123456789)."
+        msg1 = " من فضلك قم بتأكيد رقم هاتف بالضغط على خيار تأكيد رقم الهاتف من القائمة 📱" if user_lang.startswith('ar') else "📱 Share Phone Number"
         await update.message.reply_text(
-            "❌ Invalid phone number format. Please share your contact using the button below "
-            "and ensure it includes your country code (e.g., +123456789).",
+            msg,
             reply_markup=ReplyKeyboardMarkup(
-                [[KeyboardButton("📱 Share Phone Number", request_contact=True)]],
+                [[KeyboardButton(msg1, request_contact=True)]],
                 resize_keyboard=True
             )
         )
@@ -608,20 +681,33 @@ async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             registration_date
         ))
         conn.commit()
-        await update.message.reply_text(
-            # "✅ Registration complete!\n\n"
-            f"✅ Registration Complete:\n"
-            f"👤 Name: {escape_markdown(fullname)}\n"
-            f"📧 Email: {escape_markdown_2(str(email))}\n"
-            f"📱 Phone: {escape_markdown_2(phone_number)}\n"
-            f"🌍 Country: {escape_markdown(country_name)}\n"
-            f"⭐ Registration Date: {escape_markdown_2(str(registration_date))}",
-            reply_markup=get_menu(update.effective_user.id)
-        )
+        if user_lang.startswith('ar'):
+            await update.message.reply_text(
+                # "✅ Registration complete!\n\n"
+                f"✅ اكتملت عملية التسجيل بنجاح :\n"
+                f"👤 أسمك: {escape_markdown(fullname)}\n"
+                f"📧 بريدك الإلكتروني: {escape_markdown_2(str(email))}\n"
+                f"📱 رقم هاتفك: {escape_markdown_2(phone_number)}\n"
+                f"🌍 بلدك: {escape_markdown(country_name)}\n"
+                f"⭐ تاريخ التسجيل: {escape_markdown_2(str(registration_date))}",
+                reply_markup=get_menu(user_lang,update.effective_user.id)
+            )
+        else:
+            await update.message.reply_text(
+                # "✅ Registration complete!\n\n"
+                f"✅ Registration Complete:\n"
+                f"👤 Name: {escape_markdown(fullname)}\n"
+                f"📧 Email: {escape_markdown_2(str(email))}\n"
+                f"📱 Phone: {escape_markdown_2(phone_number)}\n"
+                f"🌍 Country: {escape_markdown(country_name)}\n"
+                f"⭐ Registration Date: {escape_markdown_2(str(registration_date))}",
+                reply_markup=get_menu(user_lang,update.effective_user.id)
+            )
         # Show main menu after registration       
     except Exception as e:
         logger.error(f"Database error: {str(e)}")
-        await update.message.reply_text("❌ Registration failed. Please try again.")
+        msg = " فشلت عملية التسجيل يرجى إعادة المحاولة. ❌" if user_lang.startswith('ar') else "❌ Registration failed. Please try again."
+        await update.message.reply_text(msg)
         return ConversationHandler.END
     finally:
         conn.close()
@@ -629,15 +715,18 @@ async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     return ConversationHandler.END
 
 async def handle_invalid_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_lang = update.effective_user.language_code or 'en'
     """Handle non-contact input in phone number stage"""
+    msg = " قم بتأكيد رقم هاتفك من خلال الضغط على خيار تأكيد الرقم من القائمة 📱" if user_lang.startswith('ar') else "📱 Share Phone Number"
     contact_keyboard = ReplyKeyboardMarkup(
-        [[KeyboardButton("📱 Share Phone Number", request_contact=True)]],
+        [[KeyboardButton(msg, request_contact=True)]],
         resize_keyboard=True,
         one_time_keyboard=True
     )
     
+    msg = " من فضلك استخدم الزر في الأسفل من القائمة لتأكيد رقم هاتفك ❌" if user_lang.startswith('ar') else "❌ Please use the button below to share your phone number."
     await update.message.reply_text(
-        "❌ Please use the button below to share your phone number.",
+        msg,
         reply_markup=contact_keyboard
     )
     return PHONE
@@ -693,68 +782,96 @@ async def handle_invalid_contact(update: Update, context: ContextTypes.DEFAULT_T
 # ========== ADMIN FUNCTIONALITY ==========
 async def handle_channel_verification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start channel verification process"""
-    if await is_banned(update.effective_user.id):
-        await update.message.reply_text("🚫 Your access has been revoked")
+    user = update.effective_user
+    user_lang = update.effective_user.language_code or 'en'
+    if await is_banned(user.id):
+        msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
+        await update.message.reply_text(msg)
         return ConversationHandler.END
-    if not await is_registered(update.effective_user.id):
-        await update.message.reply_text("❌ Please Register First.")
+    if not await is_registered(user.id):
+        msg = " من فضلك قم بالتسجيل أولا ❌" if user_lang.startswith('ar') else "❌ Please Register First."
+        await update.message.reply_text(msg)
         return ConversationHandler.END
-    
-    await update.message.reply_text("🔗 Please send your YouTube channel URL:")
+    msg = " من فضلك أرسل رابط القناة للتحقق منه والمتابعة 🔗" if user_lang.startswith('ar') else "🔗 Please send your YouTube channel URL:"
+    await update.message.reply_text(msg)
     return CHANNEL_URL
 
 async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin panel access control"""
     user = update.effective_user
+    user_lang = update.effective_user.language_code or 'en'
     if str(user.id) != ADMIN_TELEGRAM_ID:
         await update.message.reply_text("🚫 Access denied!")
         return
     
-    keyboard = [
-        # ["📊 User Statistics", "📢 Broadcast Message"],
-        
-        ["🚫 Ban Client", "✅ UnBan Client"],
-        ["🚫 Ban User", "✅ UnBan User"],
-        ["🗑 Delete Channel", "🗑 Delete  All Channels"], # Updated buttons
-        ["🔙 Main Menu"]
-    ]
-    await update.message.reply_text(
-        "👑 Admin Panel:",
-        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    )
+    if user_lang.startswith('ar'):
+        keyboard = [
+            # ["📊 User Statistics", "📢 Broadcast Message"],
+            
+            ["🚫 Ban Client", "✅ UnBan Client"],
+            ["🚫 Ban User", "✅ UnBan User"],
+            ["حذف قناة 🗑", "🗑 Delete  All Channels"], # Updated buttons
+            ["🔙 Main Menu"]
+        ]
+        await update.message.reply_text(
+            "👑 Admin Panel:",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
+    else:
+        keyboard = [
+            # ["📊 User Statistics", "📢 Broadcast Message"],
+            
+            ["🚫 Ban Client", "✅ UnBan Client"],
+            ["🚫 Ban User", "✅ UnBan User"],
+            ["🗑 Delete Channel", "🗑 Delete  All Channels"], # Updated buttons
+            ["🔙 Main Menu"]
+        ]
+        await update.message.reply_text(
+            "👑 Admin Panel:",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
 
 # ========== IMPROVED ERROR HANDLING ==========
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle PostgreSQL errors"""
+    user_lang = update.effective_user.language_code or 'en'
     logger.error("Exception:", exc_info=context.error)
     
     if isinstance(context.error, errors.UniqueViolation):
-        await update.message.reply_text("❌ This entry already exists!")
+        msg = " خطأ في الإدخال ❌" if user_lang.startswith('ar') else "❌ This entry already exists!"
+        await update.message.reply_text(msg)
     elif isinstance(context.error, errors.ForeignKeyViolation):
-        await update.message.reply_text("❌ Invalid reference!")
+        msg = " مصدر غير معروف ❌" if user_lang.startswith('ar') else "❌ Invalid reference!"
+        await update.message.reply_text(msg)
     else:
-        await update.message.reply_text("⚠️ An error occurred. Please try again.")
+        msg = " أمر غير معروف يرجى إعادة المحاولة ⚠️" if user_lang.startswith('ar') else "⚠️ An error occurred. Please try again."
+        await update.message.reply_text(msg)
         
 # ========== ADMIN DELETE CHANNELS ==========
 async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin-only channel deletion flow"""
-    if await is_banned(update.effective_user.id):
-        await update.message.reply_text("🚫 Your access has been revoked")
+    user = update.effective_user
+    user_lang = update.effective_user.language_code or 'en'
+    if await is_banned(user.id):
+        msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
+        await update.message.reply_text(msg)
         return ConversationHandler.END
-    if not await is_registered(update.effective_user.id):
-        await update.message.reply_text("❌ Please Register First.")
+    if not await is_registered(user.id):
+        msg = " من فضلك قم بالتسجيل أولا ❌" if user_lang.startswith('ar') else "❌ Please Register First."
+        await update.message.reply_text(msg)
         return ConversationHandler.END
     # user = update.effective_user
     # if str(user.id) != ADMIN_TELEGRAM_ID:
     #     await update.message.reply_text("🚫 Access denied!")
     #     return ConversationHandler.END
-
-    await update.message.reply_text("Enter Channel URL to delete:")
+    msg = "من فضلك أدخل رابط القناة لحذفها" if user_lang.startswith('ar') else "Enter Channel URL to delete:"
+    await update.message.reply_text(msg)
     return "AWAIT_CHANNEL_URL"
 
 
 async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Confirm and delete channel"""
+    user_lang = update.effective_user.language_code or 'en'
     url = update.message.text.strip()
     conn = get_conn()
     try:
@@ -763,24 +880,33 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = c.fetchone()
         
         if not result:
-            await update.message.reply_text("❌ Channel not found")
+            msg = " عذرا القناة غير موجودة لحذفها ❌" if user_lang.startswith('ar') else "❌ Channel not found"
+            await update.message.reply_text(msg)
             return ConversationHandler.END
 
         channel_name = result[0]
         c.execute("SELECT id FROM links WHERE youtube_link = %s and added_by = %s", (url, update.effective_user.id,))
         result_id = c.fetchone()
+        msg = " عذرا القناة غير موجودة لحذفها ❌" if user_lang.startswith('ar') else "❌ Channel not found"
         if not result_id:
-            await update.message.reply_text("❌ Channel not found")
+            await update.message.reply_text(msg)
             return ConversationHandler.END
-        result_id_for_link = result_id[0]
+        # result_id_for_link = result_id[0]
         c.execute("DELETE FROM links WHERE youtube_link = %s and added_by = %s", (url,update.effective_user.id,))
         # c.execute("DELETE FROM user_link_status WHERE link_id = %s", (result_id_for_link,))
         conn.commit()
-        await update.message.reply_text(
-            f"✅ Channel deleted:\n"
-            f"📛 Name: {channel_name}\n"
-            f"🔗 URL: {url}"
-        )
+        if user_lang.startswith('ar'):
+            await update.message.reply_text(
+                f"✅ تم حذف القناة بنجاح :\n"
+                f"📛 أسم القناة : {channel_name}\n"
+                f"🔗 رابط القناة: {url}"
+            )
+        else:
+            await update.message.reply_text(
+                f"✅ Channel deleted:\n"
+                f"📛 Name: {channel_name}\n"
+                f"🔗 URL: {url}"
+            )
     finally:
         conn.close()
     return ConversationHandler.END
@@ -844,6 +970,7 @@ async def confirm_delete_admin(update: Update, context: ContextTypes.DEFAULT_TYP
 
     return ConversationHandler.END
 async def unban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
     if str(admin.id) != ADMIN_TELEGRAM_ID:
         await update.message.reply_text("🚫 Access denied!")
@@ -885,10 +1012,16 @@ async def unban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data = c.fetchone()
             if user_data and user_data[0]:
                 try:
-                    await context.bot.send_message(
-                        chat_id=user_data[0],
-                        text="✅ Your access to this bot has been restored"
-                    )
+                    if user_lang.startswith('ar'):
+                        await context.bot.send_message(
+                            chat_id=user_data[0],
+                            text=" تم السماح لك باستخدام هذا البوت من جديد ✅"
+                        )
+                    else:
+                        await context.bot.send_message(
+                            chat_id=user_data[0],
+                            text="✅ Your access to this bot has been restored"
+                        )
                 except Exception as e:
                     logger.error(f"Unban notification failed: {str(e)}")
         else:
@@ -914,6 +1047,7 @@ async def is_banned(telegram_id: int) -> bool:
 # ========== Ban Client FUNCTIONALITY ==========
 async def ban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ban a user from using the bot"""
+    user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
     if str(admin.id) != ADMIN_TELEGRAM_ID:
         await update.message.reply_text("🚫 Access denied!")
@@ -962,10 +1096,16 @@ async def ban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
             """, (target,))
             user_data = c.fetchone()
             if user_data and user_data[0]:
-                await context.bot.send_message(
-                    chat_id=user_data[0],
-                    text="🚫 Your access to this bot has been revoked"
-                )
+                if user_lang.startswith('ar'):
+                    await context.bot.send_message(
+                        chat_id=user_data[0],
+                        text=" لقد تم حظرك لاستخدام هذه البوت لعدم التقيد بسياسة الاستخدام 🚫"
+                    )
+                else:
+                    await context.bot.send_message(
+                        chat_id=user_data[0],
+                        text="🚫 Your access to this bot has been revoked"
+                    )
         else:
             await update.message.reply_text("❌ Client Already revoked")
             return
@@ -989,23 +1129,37 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     try:
         user_id = update.effective_user.id
+        user_lang = update.effective_user.language_code or 'en'
         if await is_banned(user_id):
-            await update.message.reply_text("🚫 Your access has been revoked")
+            msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
+            await update.message.reply_text(msg)
             return ConversationHandler.END
         profile = get_profile(user_id)
         if profile:
             fullname, email, phone, country, registration_date = profile
-            response = (
-                f"📋 *Profile Information*\n"
-                f"👤 Name: {escape_markdown(fullname)}\n"
-                f"📧 Email: {escape_markdown(email)}\n"
-                f"📱 Phone: {escape_markdown(str(phone))}\n"
-                f"🌍 Country: {escape_markdown(country)}\n"
-                f"⭐ Registration Date: {escape_markdown(str(registration_date))}"
-            )
-            await update.message.reply_text(response, parse_mode="MarkdownV2")
+            if user_lang.startswith('ar'):
+                response = (
+                    f"📋 *معلومات الملف الشخصي*\n"
+                    f"👤 أسمك: {escape_markdown(fullname)}\n"
+                    f"📧 بريدك الإلكتروني: {escape_markdown(email)}\n"
+                    f"📱 رقم هاتفك: {escape_markdown(str(phone))}\n"
+                    f"🌍 بلدك: {escape_markdown(country)}\n"
+                    f"⭐ تاريخ التسجيل: {escape_markdown(str(registration_date))}"
+                )
+                await update.message.reply_text(response, parse_mode="MarkdownV2")
+            else:
+                response = (
+                    f"📋 *Profile Information*\n"
+                    f"👤 Name: {escape_markdown(fullname)}\n"
+                    f"📧 Email: {escape_markdown(email)}\n"
+                    f"📱 Phone: {escape_markdown(str(phone))}\n"
+                    f"🌍 Country: {escape_markdown(country)}\n"
+                    f"⭐ Registration Date: {escape_markdown(str(registration_date))}"
+                )
+                await update.message.reply_text(response, parse_mode="MarkdownV2")
         else:
-            await update.message.reply_text("❌ You're not registered! Register First")
+            msg = " أنت غير مسجل حاليا يرجى التسجيل ثم إعادة المحاولة لاحقا ❌" if user_lang.startswith('ar') else "❌ You're not registered! Register First"
+            await update.message.reply_text(msg)
     except Exception as e:
         logger.error(f"Profile error: {e}")
         await update.message.reply_text("⚠️ Couldn't load profile. Please try again.")
@@ -1028,6 +1182,7 @@ def get_profile(telegram_id: int) -> tuple:
 
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ban a user from using the bot"""
+    user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
     if str(admin.id) != ADMIN_TELEGRAM_ID:
         await update.message.reply_text("🚫 Access denied!")
@@ -1076,10 +1231,16 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             """, (target,))
             user_data = c.fetchone()
             if user_data and user_data[0]:
-                await context.bot.send_message(
-                    chat_id=user_data[0],
-                    text="🚫 Your access to this bot has been revoked"
-                )
+                if user_lang.startswith('ar'):
+                    await context.bot.send_message(
+                        chat_id=user_data[0],
+                        text=" لقد تم حظرك لاستخدام هذه البوت لعدم التقيد بسياسة الاستخدام 🚫"
+                    )
+                else:
+                    await context.bot.send_message(
+                        chat_id=user_data[0],
+                        text="🚫 Your access to this bot has been revoked"
+                    )
         else:
             await update.message.reply_text("❌ User Already revoked")
             return
@@ -1090,6 +1251,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
 
 async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
     if str(admin.id) != ADMIN_TELEGRAM_ID:
         await update.message.reply_text("🚫 Access denied!")
@@ -1131,10 +1293,16 @@ async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data = c.fetchone()
             if user_data and user_data[0]:
                 try:
-                    await context.bot.send_message(
-                        chat_id=user_data[0],
-                        text="✅ Your access to this bot has been restored"
-                    )
+                    if user_lang.startswith('ar'):
+                        await context.bot.send_message(
+                            chat_id=user_data[0],
+                            text=" تم السماح لك باستخدام هذا البوت من جديد ✅"
+                        )
+                    else:
+                        await context.bot.send_message(
+                            chat_id=user_data[0],
+                            text="🚫 Your access to this bot has been revoked"
+                        )
                 except Exception as e:
                     logger.error(f"Unban notification failed: {str(e)}")
         else:
@@ -1211,6 +1379,10 @@ def main() -> None:
                 MessageHandler(filters.Regex(r"^📋 My Profile$"), profile_command),
                 MessageHandler(filters.Regex(r"^🔍 Input Your YouTube URL Channel$"), handle_channel_verification),
                 MessageHandler(filters.Regex(r"^🗑 Delete Channel$"), delete_channel),
+                MessageHandler(filters.Regex(r"^التسجيل 📝$"), handle_registration),
+                MessageHandler(filters.Regex(r"^الملف الشخصي 📋$"), profile_command),
+                MessageHandler(filters.Regex(r"^أدخل رابط القناة للتحقق منه 🔍$"), handle_channel_verification),
+                MessageHandler(filters.Regex(r"^حذف قناة 🗑$"), delete_channel),
             ],
             states={
                 EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, email_handler)],
@@ -1272,7 +1444,9 @@ def main() -> None:
                     
                     # Check ban status for all other interactions
                     user = update.effective_user
-                    if user and await is_banned(user.id):
+                    # user_lang = update.effective_user.language_code or 'en'
+                    if await is_banned(user.id):
+                        # msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
                         await update.message.reply_text("🚫 Your access has been revoked")
                         return ConversationHandler.END
                         

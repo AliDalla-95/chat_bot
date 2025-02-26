@@ -16,19 +16,22 @@ def check_text_in_image(image_path, chosen_words) -> bool:
     print(f"chosen_words: {chosen_words}")
     
     # Define subscription variants (lowercase)
-    subscription_variants = {"subscribed", "subsorived", "Subsorived",  "subscrived", "subscríved", "subsoribed", "subscrined", "subscroined", "subscribd", "subscríbed", "subscroíbed", "subscroíned"}
+    subscription_variants = {"subscribed", "subsorived","subscrived", "subscríved", "subsoribed", "subscrined", "subscroined", "subscribd", "subscríbed", "subscroíbed", "subscroíned"}
     roi_coordinates = (0.0, 0.1, 0.8, 0.5)
 
-    # Treat the entire input as a single phrase or word
+    # Extract the first word from chosen_words (before the first space)
+    first_word = chosen_words.strip().split(" ")[0]  # Get the first word
+    print(f"first_word: {first_word}")
+
+    # Generate variations for the first word
     chosen_words_all = set()
-    word = chosen_words.strip()  # Remove leading/trailing spaces
     variations = [
-        word,  # Original
-        word + ".com",
-        "@" + word,
-        word.lower(),
-        ("@" + word).lower(),
-        re.sub(r'\s*TV$', '', word, flags=re.IGNORECASE)
+        first_word,  # Original
+        first_word + ".com",
+        "@" + first_word,
+        first_word.lower(),
+        ("@" + first_word).lower(),
+        re.sub(r'\s*TV$', '', first_word, flags=re.IGNORECASE)
     ]
     chosen_words_all.update(variations)
     
