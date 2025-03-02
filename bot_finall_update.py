@@ -42,6 +42,8 @@ user_pages = {}
 
 # Conversation states
 EMAIL, PHONE = range(2)
+WITHDRAW_AMOUNT = 0
+CARRIER_SELECTION = 3
 
 def connect_db():
     """Create and return a PostgreSQL database connection"""
@@ -177,14 +179,16 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             # Arabic menu
             keyboard = [
                 ["بدء 👋", "تسجيل 📝"],
-                ["الملف الشخصي 📋", "عرض المهام 🔍"]
+                ["الملف الشخصي 📋", "عرض المهام 🔍"],
+                ["سحب الأرباح 💵"]  # New Arabic withdrawal button
             ]
             menu_text = "اختر أمرا من القائمة"
         else:
             # English menu (default)
             keyboard = [
                 ["👋 Start", "📝 Register"],
-                ["📋 Profile", "🔍 View Links"]
+                ["📋 Profile", "🔍 View Links"],
+                ["💵 Withdraw"]  # New English withdrawal button
             ]
             menu_text = "Choose a command:"
             
@@ -355,23 +359,25 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
         profile = get_profile(user_id)
         if profile:
-            _, name, email, phone, country, reg_date, points = profile
+            _, name, email, phone, country, reg_date, points, total_withdrawals = profile
             if user_lang.startswith('ar'):
                 msg = (f"📋 *ملفك الشخصي :*\n"
-                f"👤 أسمك : {escape_markdown(name)}\n"
-                f"📧 بريدك الإلكتروني : {escape_markdown(email)}\n"
-                f"📱 رقم هاتفك : {escape_markdown(phone)}\n"
-                f"🌍 بلدك : {escape_markdown(country)}\n"
-                f"⭐ تاريخ التسجيل : {escape_markdown(reg_date)}\n"
-                f"🏆 نقاطك : {points}")
+                    f"👤 أسمك : {escape_markdown(name)}\n"
+                    f"📧 بريدك الإلكتروني : {escape_markdown(email)}\n"
+                    f"📱 رقم هاتفك : {escape_markdown(phone)}\n"
+                    f"🌍 بلدك : {escape_markdown(country)}\n"
+                    f"⭐ تاريخ التسجيل : {escape_markdown(reg_date)}\n"
+                    f"🏆 نقاطك : {points}\n"
+                    f"💰 إجمالي السحوبات : {total_withdrawals} نقطة")
             else:
                 msg = (f"📋 *Profile Information*\n"
-                f"👤 Name: {escape_markdown(name)}\n"
-                f"📧 Email: {escape_markdown(email)}\n"
-                f"📱 Phone: {escape_markdown(phone)}\n"
-                f"🌍 Country: {escape_markdown(country)}\n"
-                f"⭐ Registration Date: {escape_markdown(reg_date)}\n"
-                f"🏆 Points: {points}")                
+                    f"👤 Name: {escape_markdown(name)}\n"
+                    f"📧 Email: {escape_markdown(email)}\n"
+                    f"📱 Phone: {escape_markdown(phone)}\n"
+                    f"🌍 Country: {escape_markdown(country)}\n"
+                    f"⭐ Registration Date: {escape_markdown(reg_date)}\n"
+                    f"🏆 Points: {points}\n"
+                    f"💰 Total Withdrawals: {total_withdrawals} points")              
             response = (msg)
             await update.message.reply_text(response, parse_mode="MarkdownV2")
         else:
@@ -387,11 +393,23 @@ def get_profile(telegram_id: int) -> tuple:
     try:
         with connect_db() as conn:
             with conn.cursor() as cursor:
+                # Get user data
                 cursor.execute(
                     "SELECT telegram_id, full_name, email, phone, country, registration_date, points FROM users WHERE telegram_id = %s",
                     (telegram_id,)
                 )
-                return cursor.fetchone()
+                user_data = cursor.fetchone()
+                if not user_data:
+                    return None
+
+                # Get total withdrawals
+                cursor.execute(
+                    "SELECT COALESCE(SUM(amount * 100), 0) FROM withdrawals WHERE user_id = %s",
+                    (telegram_id,)
+                )
+                total_withdrawals = cursor.fetchone()[0] or 0
+
+                return (*user_data, total_withdrawals)
     except Exception as e:
         logger.error(f"Error in get_profile: {e}")
         return None
@@ -756,6 +774,248 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         
 
 ##########################
+#      Withdrawals       #
+##########################
+def get_user_points(telegram_id: int) -> int:
+    """Get current points balance"""
+    try:
+        with connect_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT points FROM users WHERE telegram_id = %s",
+                    (telegram_id,)
+                )
+                result = cursor.fetchone()
+                return result[0] if result else 0
+    except Exception as e:
+        logger.error(f"Error in get_user_points: {e}")
+        return 0
+
+def deduct_points(telegram_id: int, amount: int) -> None:
+    """Deduct points from user's balance"""
+    points_to_deduct = amount * 100
+    try:
+        with connect_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE users SET points = points - %s WHERE telegram_id = %s",
+                    (points_to_deduct, telegram_id)
+                )
+                conn.commit()
+    except Exception as e:
+        logger.error(f"Error deducting points: {e}")
+        conn.rollback()
+        raise
+
+def create_withdrawal(telegram_id: int, amount: int, carrier: str) -> None:
+    """Record the withdrawal with carrier information"""
+    try:
+        profile = get_full_profile(telegram_id)
+        if not profile:
+            raise ValueError("User profile not found")
+
+        with connect_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO withdrawals (
+                        user_id, 
+                        amount,
+                        carrier,
+                        full_name,
+                        email,
+                        phone,
+                        country,
+                        registration_date
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    telegram_id,
+                    amount,
+                    carrier,
+                    profile['full_name'],
+                    profile['email'],
+                    profile['phone'],
+                    profile['country'],
+                    profile['registration_date']
+                ))
+                conn.commit()
+    except Exception as e:
+        logger.error(f"Error creating withdrawal: {e}")
+        conn.rollback()
+        raise
+
+def get_full_profile(telegram_id: int) -> dict:
+    """Get complete user profile data"""
+    try:
+        with connect_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT 
+                        full_name,
+                        email,
+                        phone,
+                        country,
+                        registration_date,
+                        points
+                    FROM users 
+                    WHERE telegram_id = %s
+                """, (telegram_id,))
+                result = cursor.fetchone()
+                if result:
+                    return {
+                        'full_name': result[0],
+                        'email': result[1],
+                        'phone': result[2],
+                        'country': result[3],
+                        'registration_date': result[4],
+                        'points': result[5]
+                    }
+                return None
+    except Exception as e:
+        logger.error(f"Error getting full profile: {e}")
+        return None
+
+# Add new functions
+async def start_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_lang = update.effective_user.language_code or 'en'
+    user_id = update.effective_user.id
+
+    if await is_banned(user_id):
+        msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
+        await update.message.reply_text(msg)
+        return ConversationHandler.END
+
+    if not user_exists(user_id):
+        msg = "من فضلك قم بالتسجيل أولا ❌" if user_lang.startswith('ar') else "❌ Please register first!"
+        await update.message.reply_text(msg)
+        return ConversationHandler.END
+
+    points = get_user_points(user_id)
+    if points < 100:
+        msg = "تحتاج إلى 100 نقطة على الأقل لسحب الأرباح ⚠️" if user_lang.startswith('ar') else "⚠️ You need at least 100 points to withdraw."
+        await update.message.reply_text(msg)
+        return ConversationHandler.END
+
+    msg = "كم عدد المئات التي تريد سحبها؟ (أدخل رقماً)" if user_lang.startswith('ar') else "Enter the number of 100-point units to withdraw:"
+    await update.message.reply_text(msg)
+    return WITHDRAW_AMOUNT
+
+async def process_withdrawal_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process withdrawal amount and initiate carrier selection"""
+    user_lang = update.effective_user.language_code or 'en'
+    user_id = update.effective_user.id
+    amount_text = update.message.text.strip()
+
+    # Validate numeric input
+    if not amount_text.isdigit():
+        error_msg = (
+            "❌ يرجى إدخال أرقام فقط" if user_lang.startswith('ar') 
+            else "❌ Please enter numbers only"
+        )
+        await update.message.reply_text(error_msg)
+        return WITHDRAW_AMOUNT
+
+    try:
+        amount = int(amount_text)
+        if amount <= 0:
+            raise ValueError("Negative value")
+    except ValueError:
+        error_msg = (
+            "❌ الرجاء إدخال رقم صحيح موجب" if user_lang.startswith('ar')
+            else "❌ Please enter a positive integer"
+        )
+        await update.message.reply_text(error_msg)
+        return WITHDRAW_AMOUNT
+
+    # Check available points
+    available_points = get_user_points(user_id)
+    max_withdrawal_units = available_points // 100
+    
+    if max_withdrawal_units < 1:
+        error_msg = (
+            "⚠️ تحتاج إلى 100 نقطة على الأقل للسحب" if user_lang.startswith('ar')
+            else "⚠️ You need at least 100 points to withdraw"
+        )
+        await update.message.reply_text(error_msg)
+        return ConversationHandler.END
+
+    if amount > max_withdrawal_units:
+        error_msg = (
+            f"❌ الحد الأقصى للسحب هو {max_withdrawal_units}" if user_lang.startswith('ar')
+            else f"❌ Maximum withdrawal is {max_withdrawal_units} units"
+        )
+        await update.message.reply_text(error_msg)
+        return WITHDRAW_AMOUNT
+
+    # Store valid amount and proceed to carrier selection
+    context.user_data['withdrawal_amount'] = amount
+    return await select_carrier(update, context)
+
+
+
+async def select_carrier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Display carrier selection buttons"""
+    user_lang = update.effective_user.language_code or 'en'
+    
+    buttons = [
+        [
+            InlineKeyboardButton("MTN", callback_data="carrier_MTN"),
+            InlineKeyboardButton(
+                "سيرياتيل" if user_lang.startswith('ar') else "SYRIATEL", 
+                callback_data="carrier_SYRIATEL"
+            )
+        ]
+    ]
+    
+    prompt_text = (
+        "الرجاء اختيار شركة الاتصالات:" if user_lang.startswith('ar')
+        else "Please select your mobile carrier:"
+    )
+
+    await update.message.reply_text(
+        prompt_text,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+    return CARRIER_SELECTION
+
+async def process_carrier_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_lang = update.effective_user.language_code or 'en'
+    query = update.callback_query
+    await query.answer()
+    
+    carrier = query.data.split('_')[1]
+    user_id = query.from_user.id
+    amount = context.user_data.get('withdrawal_amount')
+    
+    try:
+        # Deduct points and create withdrawal
+        deduct_points(user_id, amount)
+        create_withdrawal(user_id, amount, carrier)  # Modified function
+        
+        msg = (f"✅ تم طلب سحب {amount * 100} نقطة إلى {carrier}"
+               if user_lang.startswith('ar') 
+               else f"✅ Withdrawal request for {amount * 100} points to {carrier} submitted")
+        
+        await query.edit_message_text(msg)
+    except Exception as e:
+        logger.error(f"Withdrawal error: {e}")
+        msg = ("❌ فشل إجراء السحب" if user_lang.startswith('ar') 
+               else "❌ Withdrawal failed")
+        await query.edit_message_text(msg)
+    
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def cancel_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_lang = update.effective_user.language_code or 'en'
+    await update.message.reply_text(
+        "❌ تم إلغاء عملية السحب" if user_lang.startswith('ar') else "❌ Withdrawal cancelled",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return ConversationHandler.END
+
+
+
+##########################
 #    Main Application    #
 ##########################
 def main() -> None:
@@ -780,6 +1040,18 @@ def main() -> None:
         fallbacks=[CommandHandler('cancel', lambda u,c: ConversationHandler.END)],
     )
 
+    withdrawal_conv = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex(r'^💵 Withdraw$'), start_withdrawal),
+            MessageHandler(filters.Regex(r'^سحب الأرباح 💵$'), start_withdrawal),
+        ],
+        states={
+            WITHDRAW_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_withdrawal_amount)],
+            CARRIER_SELECTION: [CallbackQueryHandler(process_carrier_selection, pattern=r"^carrier_")]
+        },
+        fallbacks=[CommandHandler('cancel', cancel_withdrawal)]
+    )
+
     # Register handlers
     handlers = [
         CommandHandler('start', start),
@@ -787,6 +1059,7 @@ def main() -> None:
         CommandHandler('profile', profile_command),
         CommandHandler('viewlinks', view_links),
         conv_handler,
+        withdrawal_conv,  # Add this line
         CallbackQueryHandler(handle_submit_callback, pattern=r"^submit_\d+$"),
         CallbackQueryHandler(navigate_links, pattern=r"^(prev|next)_\d+$"),
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_commands),
