@@ -749,6 +749,8 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await update.effective_message.reply_text(
                 msg
             )
+            await show_menu(update, context)
+
     except Exception as e:
         logger.error(f"Error in error handler: {e}")
         

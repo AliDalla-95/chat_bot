@@ -56,8 +56,9 @@ logger = logging.getLogger(__name__)
     COUNTRY, 
     CHANNEL_URL,
     SUBSCRIPTION_CHOICE,
-    AWAIT_PAYMENT_ID  # New state
-) = range(7)
+    COMPANY_CHOICE,  # New state
+    AWAIT_PAYMENT_ID
+) = range(8)
 
 # ========== MENU SYSTEM ==========
 # ========== UPDATED MENU SYSTEM ==========
@@ -263,7 +264,7 @@ async def list_channels_paid(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         # Get channels with likes count FOR CURRENT USER ONLY
         c.execute("""
-            SELECT l.description, l.youtube_link, l.channel_id, l.submission_date,
+            SELECT l.description, l.youtube_link, l.channel_id, l.submission_date,subscription_count,
                    COALESCE(k.channel_likes, 0) AS likes_count
             FROM links l
             LEFT JOIN likes k ON l.id = k.id
@@ -280,14 +281,14 @@ async def list_channels_paid(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
             
         response = ["📋 Your Submitted Channels:"]
-        for idx, (name, url, channel_id, date, likes) in enumerate(channels, 1):
+        for idx, (name, url, channel_id, date, likes, subscription_count) in enumerate(channels, 1):
             if user_lang.startswith('ar'):
                 response.append(
                     f"{idx}. {name}\n"
                     f"🔗 {url}\n"
                     f"🆔 معرف القناة: {channel_id}\n"
                     f"📅 تاريخ إضافتها: {date}\n"
-                    # f"❤️ المطلوب: {subscription_count}\n"
+                    f"❤️ المطلوب: {subscription_count}\n"
                     f"❤️ عدد الاشتراكات: {likes}\n"
                     f"{'-'*40}"
                 )
@@ -297,7 +298,7 @@ async def list_channels_paid(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     f"🔗 {url}\n"
                     f"🆔 Channel ID: {channel_id}\n"
                     f"📅 Submitted: {date}\n"
-                    # f"❤️ Required: {subscription_count}\n"
+                    f"❤️ Required: {subscription_count}\n"
                     f"❤️ Likes: {likes}\n"
                     f"{'-'*40}"
                 )
@@ -551,7 +552,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         logger.error(f"Channel processing errors: {str(e)}")
         msg = " حدث خطأ غير متوقع يرجى إعادة المحاولة لاحقا ❌" if user_lang.startswith('ar') else "❌ An error occurred. Please try again"
-        await update.message.reply_text(msg)
+        await update.message.reply_text(msg,reply_markup=get_menu(user_lang,user.id))
     return ConversationHandler.END
 
 
@@ -661,7 +662,7 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Get channels with likes count FOR CURRENT USER ONLY
         c.execute("""
-            SELECT description, youtube_link, channel_id, submission_date, id_pay
+            SELECT id, description, youtube_link, channel_id, submission_date, id_pay
             FROM links_success
             WHERE added_by = %s
             ORDER BY submission_date DESC
@@ -706,11 +707,11 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         #     await update.message.reply_text(message)
 
         for channel in channels:
-            description, youtube_link, channel_id, submission_date, id_pay = channel
+            id, description, youtube_link, channel_id, submission_date, id_pay = channel
             # print(f"{channel_id}")
-            button_text = f"{description}--{channel_id}--({id_pay or 'No ID'})" if user_lang != 'ar' \
-                else f"{description}--{channel_id}--({id_pay or 'لا يوجد رقم'})"
-            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"channel_{description}")])
+            button_text = f"{id}--({description}--{id_pay or 'No ID'})" if user_lang != 'ar' \
+                else f"{id}--({description}--{id_pay or 'لا يوجد رقم'})"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"channel_{id}")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -974,7 +975,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text(msg)
     else:
         msg = " أمر غير معروف يرجى إعادة المحاولة ⚠️" if user_lang.startswith('ar') else "⚠️ An error occurred. Please try again."
-        await update.message.reply_text(msg)
+        await update.message.reply_text(msg,reply_markup=get_menu(user_lang,update.effective_user.id))
         
 # ========== ADMIN DELETE CHANNELS ==========
 async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1446,43 +1447,89 @@ async def handle_subscription_choice(update: Update, context: ContextTypes.DEFAU
     user_lang = update.effective_user.language_code or 'en'
     text = update.message.text.strip()
 
-
-
     # Handle cancellation
     if text in ["Cancel ❌", "إلغاء ❌"]:
         cancel_msg = "🚫 Operation cancelled" if user_lang != 'ar' else "🚫 تم الإلغاء"
-        await update.message.reply_text(
-            cancel_msg,
-            reply_markup=get_menu(user_lang, user.id)
-            )
+        await update.message.reply_text(cancel_msg, reply_markup=get_menu(user_lang, user.id))
         return ConversationHandler.END
 
-    # Validate input
+    # Validate subscription choice
     if text in ["100 Subscribers", "100 مشترك"]:
         subscription_count = 100
+        price = 6
     elif text in ["1000 Subscribers", "1000 مشترك"]:
         subscription_count = 1000
+        price = 60
     else:
         error_msg = "❌ Invalid choice. Please select 100 or 1000." if user_lang == 'en' else "❌ اختيار غير صحيح. يرجى اختيار 100 أو 1000"
         await update.message.reply_text(error_msg)
         return SUBSCRIPTION_CHOICE
 
-    # Get stored channel data
+    # Store subscription count in context
+    context.user_data['subscription_count'] = subscription_count
+    context.user_data['price'] = price
+
+    # Define telecom companies
+    companies = ["Vodafone Egypt", "Syriatel", "Mtn", "Alfa", "Touch", 
+                 "Etisalat Misr", "Orange Egypt", "Telecom Egypt", 
+                 "Zain Jordan", "Orange Jordan", "Umniah"]
+
+    # Prepare company selection keyboard
+    company_buttons = [[company] for company in companies]
+    cancel_btn = ["Cancel ❌"] if user_lang != 'ar' else ["إلغاء ❌"]
+    company_buttons.append(cancel_btn)
+
+    reply_markup = ReplyKeyboardMarkup(company_buttons, resize_keyboard=True)
+
+    # Prompt user to select company
+    prompt_msg = "Please select your telecom company:" if user_lang != 'ar' else "الرجاء اختيار شركة الاتصالات:"
+    await update.message.reply_text(prompt_msg, reply_markup=reply_markup)
+
+    return COMPANY_CHOICE
+
+
+async def company_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    user_lang = user.language_code or 'en'
+    text = update.message.text.strip()
+
+    # Handle cancellation
+    if text in ["Cancel ❌", "إلغاء ❌"]:
+        cancel_msg = "🚫 Operation cancelled" if user_lang != 'ar' else "🚫 تم الإلغاء"
+        await update.message.reply_text(cancel_msg, reply_markup=get_menu(user_lang, user.id))
+        return ConversationHandler.END
+
+    # Validate telecom company
+    allowed_companies = ["Vodafone Egypt", "Syriatel", "Mtn", "Alfa", "Touch", 
+                         "Etisalat Misr", "Orange Egypt", "Telecom Egypt", 
+                         "Zain Jordan", "Orange Jordan", "Umniah"]
+    if text not in allowed_companies:
+        error_msg = "❌ Invalid company selected. Please choose from the list." if user_lang != 'ar' else "❌ شركة غير صالحة. يرجى الاختيار من القائمة."
+        await update.message.reply_text(error_msg)
+        return COMPANY_CHOICE
+
+    # Store telecom company in context
+    context.user_data['telecom_company'] = text
+
+    # Retrieve data from context
+    price = context.user_data.get('price')
+    subscription_count = context.user_data.get('subscription_count')
+    telecom_company = context.user_data.get('telecom_company')
     channel_data = context.user_data.get('channel_data', {})
-    
+
     try:
         conn = get_conn()
         c = conn.cursor()
-        
+
         # Get user's fullname
         c.execute("SELECT fullname FROM clients WHERE telegram_id = %s", (user.id,))
         ex = c.fetchone()[0]
 
-        # Insert into database with subscription count
+        # Insert into database with telecom company
         c.execute("""
             INSERT INTO links_success 
-            (added_by, youtube_link, description, channel_id, submission_date, adder, subscription_count)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (added_by, youtube_link, description, channel_id, submission_date, adder, subscription_count, telecom_company, price)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             user.id,
             channel_data.get('url'),
@@ -1490,51 +1537,41 @@ async def handle_subscription_choice(update: Update, context: ContextTypes.DEFAU
             channel_data.get('channel_id'),
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             ex,
-            subscription_count
+            subscription_count,
+            telecom_company,
+            price
         ))
-        # c.execute("""
-        #     INSERT INTO links_success 
-        #     (added_by, youtube_link, description, channel_id, submission_date, adder) OVERRIDING SYSTEM VALUE
-        #     VALUES (%s, %s, %s, %s, %s, %s)
-        # """, (
-        #     user.id,
-        #     channel_data.get('url'),
-        #     channel_data.get('channel_name'),
-        #     channel_data.get('channel_id'),
-        #     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        #     ex,
-        # ))
         conn.commit()
 
-        channel_name = channel_data.get('channel_name')
-        channel_id = channel_data.get('channel_id')
-        url = channel_data.get('url')
-        if user_lang.startswith('ar'):
-            await update.message.reply_text(
-                f"✅ تمت عملية إضافة القناة بنجاح تام\n\n"
-                f"📛 أسم القناة: {channel_name}\n"
-                f"🆔 معرف القناة: {channel_id}\n"
-                f"🔗 رابط القناة: {url}\n"
-                f"❤️ الاشتراكات المطلوبة: {subscription_count}",
-                reply_markup=get_menu(user_lang, update.effective_user.id)
-            )
-        else:
-            await update.message.reply_text(
-                f"✅ Channel registered successfully!\n\n"
-                f"📛 Name: {channel_name}\n"
-                f"🆔 ID: {channel_id}\n"
-                f"🔗 URL: {url}\n"
-                f"❤️ Requested subscribers: {subscription_count}",
-                reply_markup=get_menu(user_lang, update.effective_user.id)
-            )
-            
+        # Success message
+        success_msg = (
+            f"✅ Channel registered successfully!\n\n"
+            f"📛 Name: {channel_data.get('channel_name')}\n"
+            f"🆔 ID: {channel_data.get('channel_id')}\n"
+            f"🔗 URL: {channel_data.get('url')}\n"
+            f"❤️ Requested subscribers: {subscription_count}\n"
+            f"🏢 Telecom Company: {telecom_company}"
+        ) if user_lang != 'ar' else (
+            f"✅ تمت عملية إضافة القناة بنجاح تام\n\n"
+            f"📛 أسم القناة: {channel_data.get('channel_name')}\n"
+            f"🆔 معرف القناة: {channel_data.get('channel_id')}\n"
+            f"🔗 رابط القناة: {channel_data.get('url')}\n"
+            f"❤️ الاشتراكات المطلوبة: {subscription_count}\n"
+            f"🏢 شركة الاتصالات: {telecom_company}"
+        )
+
+        await update.message.reply_text(
+            success_msg,
+            reply_markup=get_menu(user_lang, user.id)
+        )
+
     except Exception as e:
-        logger.error(f"Subscription error: {str(e)}")
-        error_msg = "❌ Error saving data" if user_lang == 'en' else "❌ خطأ في حفظ البيانات"
+        logger.error(f"Database error: {str(e)}")
+        error_msg = "❌ Error saving data." if user_lang != 'ar' else "❌ حدث خطأ أثناء حفظ البيانات."
         await update.message.reply_text(error_msg)
     finally:
         conn.close()
-        
+
     return ConversationHandler.END
 
 
@@ -1569,13 +1606,15 @@ async def handle_payment_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # print(f"{payment_id}")
         # print(f"{channel_id_db}")
         # print(f"{user.id}")
+        print(f"payment_id{payment_id}")
+        print(f"channel_id_db{channel_id_db}")
 
         conn = get_conn()
         c = conn.cursor()
         c.execute("""
             UPDATE links_success 
             SET id_pay = %s 
-            WHERE description = %s AND added_by = %s
+            WHERE id = %s AND added_by = %s
         """, (payment_id, channel_id_db, user.id))
         
         conn.commit()
@@ -1604,6 +1643,8 @@ async def channel_button_handler(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     
     channel_id = query.data.split("_")[1]
+    print(f"query{query}")
+    print(f"{channel_id}")
     context.user_data["selected_channel"] = channel_id
     
     user_lang = query.from_user.language_code or 'en'
@@ -1707,8 +1748,9 @@ def main() -> None:
                 # COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, country_handler)],
                 CHANNEL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_channel_url)],
                 "AWAIT_CHANNEL_URL": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)],
+                AWAIT_PAYMENT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_id)],
                 SUBSCRIPTION_CHOICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_subscription_choice)],
-                AWAIT_PAYMENT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_id)]
+                COMPANY_CHOICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, company_handler)],
             },
             fallbacks=[
                 CommandHandler('cancel', lambda u,c: (

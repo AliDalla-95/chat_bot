@@ -14,7 +14,7 @@ from datetime import datetime
 
 # ========== CONFIGURATION ==========
 TELEGRAM_TOKEN = "7328995633:AAF4pY4xlW68RhfX43wJ3AJXfUITKpe0q8s"
-ADMIN_IDS = ["6936321897", "ADMIN_TELEGRAM_ID_2"]  # Add your admin IDs
+ADMIN_IDS = ["6936321897", "1130152311", "6106281772", "1021796797", "2050036668", "1322069113"]  # Add your admin IDs
 DATABASE_CONFIG = {
     "host": "localhost",
     "database": "Test",
@@ -281,7 +281,10 @@ async def handle_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = int(update.message.text)
         context.user_data['user_id'] = user_id
-        await update.message.reply_text("Enter message to send:")
+        await update.message.reply_text(
+            "Enter message to send:",
+            reply_markup=ReplyKeyboardMarkup([["Cancel ❌"]], resize_keyboard=True)
+        )
         return AWAIT_USER_MESSAGE
     except ValueError:
         await update.message.reply_text("❌ Invalid user ID. Must be a number.")
@@ -293,7 +296,10 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             chat_id=context.user_data['user_id'],
             text=update.message.text
         )
-        await update.message.reply_text("✅ Message sent successfully!")
+        await update.message.reply_text(
+            "✅ Message sent successfully!",
+            reply_markup=get_admin_menu()
+            )
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
         await update.message.reply_text("❌ Failed to send message")

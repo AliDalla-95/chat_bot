@@ -20,20 +20,42 @@ def check_text_in_image(image_path, chosen_words) -> bool:
     roi_coordinates = (0.0, 0.1, 0.8, 0.5)
 
     # Extract the first word from chosen_words (before the first space)
-    first_word = chosen_words.strip().split(" ")[0]  # Get the first word
-    print(f"first_word: {first_word}")
-
-    # Generate variations for the first word
+    # first_word = chosen_words.strip().split(" ")[0]  # Get the first word
+    words = chosen_words.strip().split(" ")  # Get the first word
     chosen_words_all = set()
-    variations = [
-        first_word,  # Original
-        first_word + ".com",
-        "@" + first_word,
-        first_word.lower(),
-        ("@" + first_word).lower(),
-        re.sub(r'\s*TV$', '', first_word, flags=re.IGNORECASE)
-    ]
+    # print(f"words: {words}")
+    variations = []
+    for word in words:
+        # Original and common variations
+        variations.extend([
+            word,
+            word + ".com",
+            "@" + word,
+            word.lower(),
+            ("@" + word).lower(),
+        ])
+        # TV-removed variations
+        variations.append(word)
+    
     chosen_words_all.update(variations)
+    # Generate variations for the first word
+    # chosen_words_all = set()
+    # variations = [
+    #     first_word,  # Original
+    #     first_word + ".com",
+    #     "@" + first_word,
+    #     first_word.lower(),
+    #     ("@" + first_word).lower(),
+    #     sec_word,
+    #     sec_word + ".com",
+    #     "@" + sec_word,
+    #     sec_word.lower(),
+    #     ("@" + sec_word).lower(),
+    #     re.sub(r'\s*TV$', '', first_word, flags=re.IGNORECASE),
+    #     re.sub(r'\s*TV$', '', sec_word, flags=re.IGNORECASE)
+    # ]
+    # chosen_words_all.update(variations)
+
     
     print(f"variations: {chosen_words_all}")
     
