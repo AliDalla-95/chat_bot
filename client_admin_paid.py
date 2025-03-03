@@ -138,6 +138,12 @@ async def handle_payment_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        text = update.message.text.strip()
+        user_lang = update.effective_user.language_code or 'en'
+        if text in ["Cancel ❌", "إلغاء ❌"]:
+            cancel_msg = "🚫 Operation cancelled" if user_lang != 'ar' else "🚫 تم الإلغاء"
+            await update.message.reply_text(cancel_msg, reply_markup=get_admin_menu())
+            return ConversationHandler.END
         price = float(update.message.text.strip())
         context.user_data['price'] = price
         
@@ -177,6 +183,11 @@ async def handle_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_company(update: Update, context: ContextTypes.DEFAULT_TYPE):
     company = update.message.text.strip()
+    user_lang = update.effective_user.language_code or 'en'
+    if company in ["Cancel ❌", "إلغاء ❌"]:
+        cancel_msg = "🚫 Operation cancelled" if user_lang != 'ar' else "🚫 تم الإلغاء"
+        await update.message.reply_text(cancel_msg, reply_markup=get_admin_menu())
+        return ConversationHandler.END
     context.user_data['company'] = company
     
     conn = get_conn()
@@ -265,7 +276,8 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
         finally:
             conn.close()
     else:
-        await update.message.reply_text("🚫 Operation cancelled")
+        await update.message.reply_text("🚫 Operation cancelled", reply_markup=get_admin_menu())
+        return ConversationHandler.END
     
     context.user_data.clear()
     return ConversationHandler.END

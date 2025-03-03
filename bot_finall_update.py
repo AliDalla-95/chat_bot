@@ -193,10 +193,21 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             menu_text = "Choose a command:"
             
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        await update.message.reply_text(menu_text, reply_markup=reply_markup)
+
+        # Handle both messages and callback queries
+        if update.message:
+            await update.message.reply_text(menu_text, reply_markup=reply_markup)
+        else:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=menu_text,
+                reply_markup=reply_markup
+            )
+
     except Exception as e:
         logger.error(f"Error in show_menu: {e}")
-        await update.message.reply_text("⚠️ Couldn't display menu. Please try again.")
+        error_msg = "⚠️ تعذر عرض القائمة" if user_lang.startswith('ar') else "⚠️ Couldn't display menu"
+        await update.effective_message.reply_text(error_msg)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command"""
@@ -204,6 +215,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = update.effective_user.id
         user_name = update.effective_user.first_name
         user_lang = update.effective_user.language_code or 'en'
+        # Clear any existing conversation state
+        context.user_data.clear()
         if await is_banned(user_id):
             msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
             await update.message.reply_text(user_name+" "+msg)
@@ -220,27 +233,42 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             msg = "أهلا وسهلا بك من فضلك قم بالتسجيل أولا " if user_lang.startswith('ar') else "Welcome ! Please Register First"
             await update.message.reply_text(user_name+" "+msg)
             await show_menu(update, context)
+        # Force end any existing conversations
+        return ConversationHandler.END
     except Exception as e:
         logger.error(f"Error in start: {e}")
         msg = "! لا يمكن معالجة طلبك حاليا يرجى المحاولة لاحقا ⚠️" if user_lang.startswith('ar') else "⚠️ Couldn't process your request. Please try again."
         await update.message.reply_text(msg)
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Start registration process"""
+    """Start registration process with state cleanup"""
     try:
         user_id = update.effective_user.id
         user_lang = update.effective_user.language_code or 'en'
+        
+        # Clear previous state
+        context.user_data.clear()
+        
         if await is_banned(user_id):
             msg = "تم إلغاء وصولك 🚫 "  if user_lang.startswith('ar') else "🚫 Your access has been revoked"
             await update.message.reply_text(msg)
             return ConversationHandler.END
+
         if user_exists(user_id):
             msg = "لا حاجة لإعادة التسجيل أنت مسجل بالفعل ✅ " if user_lang.startswith('ar') else "You're already registered! ✅"
             await update.message.reply_text(msg)
             return ConversationHandler.END
-
-        msg = "من فضلك قم بإدخال بريدك الإلكتروني للمتابعة" if user_lang.startswith('ar') else "Please enter your email address:"
-        await update.message.reply_text(msg)
+        if user_lang.startswith('ar'):
+            keyboard = [["إلغاء ❌"]]
+            msg = "من فضلك قم بإدخال بريدك الإلكتروني للمتابعة"
+        else:
+            keyboard = [["Cancel ❌"]]
+            msg = "Please enter your email address:"
+            
+        await update.message.reply_text(
+            msg,
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
         return EMAIL
     except Exception as e:
         logger.error(f"Error in register: {e}")
@@ -253,6 +281,11 @@ async def process_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     try:
         user_lang = update.effective_user.language_code or 'en'
         email = update.message.text.strip()
+        if email in ["Cancel ❌", "إلغاء ❌"]:
+            cancel_msg = "🚫 Operation cancelled" if user_lang != 'ar' else "🚫 تم الإلغاء"
+            await update.message.reply_text(cancel_msg)
+            await show_menu(update, context)
+            return ConversationHandler.END
         if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
             msg = "صيغة الإيميل ليست صحيحة يرجى إدخال بريدك الإلكتروني بشكل صحيح ⚠️" if user_lang.startswith('ar') else "Invalid email format ⚠️"
             raise ValueError(msg)
@@ -896,7 +929,17 @@ async def start_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
 
     msg = "كم عدد المئات التي تريد سحبها؟ (أدخل رقماً)" if user_lang.startswith('ar') else "Enter the number of 100-point units to withdraw:"
-    await update.message.reply_text(msg)
+    if user_lang.startswith('ar'):
+        keyboard = [["إلغاء ❌"]]
+        msg = "كم عدد المئات التي تريد سحبها؟ (أدخل رقماً)"
+    else:
+        keyboard = [["Cancel ❌"]]
+        msg = "Enter the number of 100-point units to withdraw:"
+        
+    await update.message.reply_text(
+        msg,
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
     return WITHDRAW_AMOUNT
 
 async def process_withdrawal_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -904,7 +947,11 @@ async def process_withdrawal_amount(update: Update, context: ContextTypes.DEFAUL
     user_lang = update.effective_user.language_code or 'en'
     user_id = update.effective_user.id
     amount_text = update.message.text.strip()
-
+    if amount_text in ["Cancel ❌", "إلغاء ❌"]:
+        msg = "تم إلغاء العملية" if user_lang.startswith('ar') else "Process Canceled"
+        await update.message.reply_text(msg)
+        await show_menu(update, context)
+        return ConversationHandler.END
     # Validate numeric input
     if not amount_text.isdigit():
         error_msg = (
@@ -967,10 +1014,13 @@ async def select_carrier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     ]
     
     prompt_text = (
-        "الرجاء اختيار شركة الاتصالات:" if user_lang.startswith('ar')
-        else "Please select your mobile carrier:"
+        "الرجاء اختيار شركة الاتصالات أو أضغط إلغاء من القائمة لإلغاء العملية:" if user_lang.startswith('ar')
+        else "Please select your mobile carrier or Cancel from the Menu to Cancel the Process:"
     )
-
+    # await update.message.reply_text(
+    #     prompt_text,
+    #     reply_markup=ReplyKeyboardMarkup([["Cancel ❌"]], resize_keyboard=True)
+    # )
     await update.message.reply_text(
         prompt_text,
         reply_markup=InlineKeyboardMarkup(buttons)
@@ -981,7 +1031,6 @@ async def process_carrier_selection(update: Update, context: ContextTypes.DEFAUL
     user_lang = update.effective_user.language_code or 'en'
     query = update.callback_query
     await query.answer()
-    
     carrier = query.data.split('_')[1]
     user_id = query.from_user.id
     amount = context.user_data.get('withdrawal_amount')
@@ -996,6 +1045,8 @@ async def process_carrier_selection(update: Update, context: ContextTypes.DEFAUL
                else f"✅ Withdrawal request for {amount * 100} points to {carrier} submitted")
         
         await query.edit_message_text(msg)
+        # Show menu after confirmation
+        await show_menu(update, context)
     except Exception as e:
         logger.error(f"Withdrawal error: {e}")
         msg = ("❌ فشل إجراء السحب" if user_lang.startswith('ar') 
@@ -1003,7 +1054,32 @@ async def process_carrier_selection(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_text(msg)
     
     context.user_data.clear()
+    show_menu(update, context)
     return ConversationHandler.END
+
+async def cancel_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_lang = update.effective_user.language_code or 'en'
+    await update.message.reply_text(
+        "❌ تم إلغاء عملية التسجيل" if user_lang.startswith('ar') else "❌ Registration cancelled",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return ConversationHandler.END
+
+async def cancel_registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Allow users to cancel registration at any point"""
+    user_lang = update.effective_user.language_code or 'en'
+    context.user_data.clear()
+    msg = "تم إلغاء التسجيل ❌" if user_lang.startswith('ar') else "❌ Registration cancelled"
+    await update.message.reply_text(msg)
+    return ConversationHandler.END
+
+async def restart_registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle registration restart during active conversation"""
+    user_lang = update.effective_user.language_code or 'en'
+    context.user_data.clear()
+    msg = "جاري إعادة بدء عملية التسجيل..." if user_lang.startswith('ar') else "Restarting registration..."
+    await update.message.reply_text(msg)
+    return await register(update, context)
 
 async def cancel_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_lang = update.effective_user.language_code or 'en'
@@ -1011,8 +1087,8 @@ async def cancel_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "❌ تم إلغاء عملية السحب" if user_lang.startswith('ar') else "❌ Withdrawal cancelled",
         reply_markup=ReplyKeyboardRemove()
     )
+    await show_menu(update, context)  # Add this line to show menu
     return ConversationHandler.END
-
 
 
 ##########################
@@ -1028,16 +1104,27 @@ def main() -> None:
             CommandHandler('register', register),
             MessageHandler(filters.Regex(r'^📝 Register$'), register),
             MessageHandler(filters.Regex(r'^/register$'), register),
-            MessageHandler(filters.Regex(r'^📝 تسجيل$'), register),
+            MessageHandler(filters.Regex(r'^تسجيل 📝$'), register),
         ],
         states={
-            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_email)],
+            EMAIL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, process_email),
+                CommandHandler('cancel', cancel_registration),
+                MessageHandler(filters.Regex(r'^(/start|/register)'), restart_registration),
+                MessageHandler(filters.Regex(r'^(Cancel ❌|إلغاء ❌)$'), cancel_email)
+            ],
             PHONE: [
                 MessageHandler(filters.CONTACT, process_phone),
+                CommandHandler('cancel', cancel_registration),
+                MessageHandler(filters.Regex(r'^(/start|/register)'), restart_registration),
                 MessageHandler(filters.ALL, lambda u,c: u.message.reply_text("❌ Please use contact button!"))
             ]
         },
-        fallbacks=[CommandHandler('cancel', lambda u,c: ConversationHandler.END)],
+        fallbacks=[
+            CommandHandler('cancel', cancel_registration),
+            MessageHandler(filters.Regex(r'^(/start|/register)'), restart_registration)
+        ],
+        allow_reentry=True
     )
 
     withdrawal_conv = ConversationHandler(
@@ -1047,7 +1134,11 @@ def main() -> None:
         ],
         states={
             WITHDRAW_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_withdrawal_amount)],
-            CARRIER_SELECTION: [CallbackQueryHandler(process_carrier_selection, pattern=r"^carrier_")]
+            CARRIER_SELECTION: [
+                CallbackQueryHandler(process_carrier_selection, pattern=r"^carrier_"),
+                # Add this line to handle text cancellation
+                MessageHandler(filters.Regex(r'^(Cancel ❌|إلغاء ❌)$'), cancel_withdrawal)
+            ]
         },
         fallbacks=[CommandHandler('cancel', cancel_withdrawal)]
     )

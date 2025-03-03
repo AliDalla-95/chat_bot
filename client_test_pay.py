@@ -1582,7 +1582,7 @@ async def handle_payment_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     payment_id = update.message.text.strip()
     channel_id_db = context.user_data.get("selected_channel")
     # Handle cancellation
-    if payment_id in ["Cancel", "إلغاء"]:
+    if payment_id in ["Cancel ❌", "إلغاء ❌"]:
         msg = "🚫 Payment ID update cancelled" if user_lang != 'ar' else "🚫 تم إلغاء تحديث رقم الدفع"
         await update.message.reply_text(msg, reply_markup=get_menu(user_lang, update.effective_user.id))
         return ConversationHandler.END
@@ -1606,8 +1606,8 @@ async def handle_payment_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # print(f"{payment_id}")
         # print(f"{channel_id_db}")
         # print(f"{user.id}")
-        print(f"payment_id{payment_id}")
-        print(f"channel_id_db{channel_id_db}")
+        # print(f"payment_id{payment_id}")
+        # print(f"channel_id_db{channel_id_db}")
 
         conn = get_conn()
         c = conn.cursor()
@@ -1623,8 +1623,7 @@ async def handle_payment_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
                        f"🆔 New Payment ID: {payment_id}") if user_lang != 'ar' \
                     else (f"✅ تم تحديث رقم الدفع بنجاح!\n"
                           f"🆔 رقم الدفع الجديد: {payment_id}")
-        
-        await update.message.reply_text(success_msg)
+        await update.message.reply_text(success_msg, reply_markup=get_menu(user_lang, update.effective_user.id))
         
     except Exception as e:
         logger.error(f"Payment ID update error: {str(e)}")
@@ -1639,18 +1638,19 @@ async def handle_payment_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ========== NEW HANDLERS ==========
 async def channel_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle channel selection from inline keyboard"""
+    user = update.effective_user
+
     query = update.callback_query
     await query.answer()
     
     channel_id = query.data.split("_")[1]
-    print(f"query{query}")
-    print(f"{channel_id}")
+    # print(f"query{query}")
+    # print(f"{channel_id}")
     context.user_data["selected_channel"] = channel_id
     
     user_lang = query.from_user.language_code or 'en'
     prompt = "Please enter payment ID Or (Cancel) to cancel The Operation:" if user_lang != 'ar' else "الرجاء إدخال رقم عملية الدفع أو كلمة (إلغاء) لإلغاء عملية الدفع:"
-    await query.message.reply_text(prompt)
-    return AWAIT_PAYMENT_ID
+    # await query.message.reply_text(prompt)
     cancel_btn = "إلغاء ❌" if user_lang.startswith('ar') else "Cancel ❌"
     await query.message.reply_text(
         prompt,
