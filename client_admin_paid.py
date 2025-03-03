@@ -291,6 +291,11 @@ async def send_message_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def handle_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        text = update.message.text.strip()
+        if text in ["Cancel ❌", "إلغاء ❌"]:
+            cancel_msg = "🚫 Operation cancelled"
+            await update.message.reply_text(cancel_msg, reply_markup=get_admin_menu())
+            return ConversationHandler.END
         user_id = int(update.message.text)
         context.user_data['user_id'] = user_id
         await update.message.reply_text(
@@ -304,6 +309,11 @@ async def handle_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        text = update.message.text.strip()
+        if text in ["Cancel ❌", "إلغاء ❌"]:
+            cancel_msg = "🚫 Operation cancelled"
+            await update.message.reply_text(cancel_msg, reply_markup=get_admin_menu())
+            return ConversationHandler.END
         await context.bot.send_message(
             chat_id=context.user_data['user_id'],
             text=update.message.text
