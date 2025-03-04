@@ -913,6 +913,7 @@ async def handle_invalid_contact(update: Update, context: ContextTypes.DEFAULT_T
 async def handle_channel_verification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start channel verification process"""
     user = update.effective_user
+    user_idd = user.id
     user_lang = update.effective_user.language_code or 'en'
     if await is_banned(user.id):
         msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
@@ -922,9 +923,26 @@ async def handle_channel_verification(update: Update, context: ContextTypes.DEFA
         msg = " من فضلك قم بالتسجيل أولا ❌" if user_lang.startswith('ar') else "❌ Please Register First."
         await update.message.reply_text(msg)
         return ConversationHandler.END
-    msg = " من فضلك أرسل رابط القناة للتحقق منه والمتابعة 🔗" if user_lang.startswith('ar') else "🔗 Please send your YouTube channel URL:"
-    await update.message.reply_text(msg)
-    return CHANNEL_URL
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM links_success where added_by = %s", (user_idd,))
+        result = c.fetchone()
+        re = result[0]
+        if result[0] < 10:
+            msg = " من فضلك أرسل رابط القناة للتحقق منه والمتابعة 🔗" if user_lang.startswith('ar') else "🔗 Please send your YouTube channel URL:"
+            await update.message.reply_text(msg)
+            return CHANNEL_URL
+        else:
+            msg = "🚫 لديك عدد كبير من القنوات يرجى الانتظار لحين اكتمال مهمة قناة" if user_lang.startswith('ar') else "🚫 You have alot of channels please wait for end one channel"
+            await update.message.reply_text(msg)
+            return ConversationHandler.END
+    except psycopg2.Error as e:
+        logger.error(f"Ban check failed: {str(e)}")
+        return False
+    finally:
+        conn.close()
+
 
 async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin panel access control"""

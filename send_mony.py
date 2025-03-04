@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 BOT_TOKEN = "8062800182:AAGwnhGinAaa-0oM2El2KMuuf3fu17Mbl_E"
 DB_URL = "postgres://postgres:postgres@localhost:5432/Test"
-ADMIN_IDS = [6936321897]
+ADMIN_IDS = [6936321897, 1130152311, 6106281772, 1021796797, 2050036668, 1322069113]
 PER_PAGE = 5
 
 # Conversation states
