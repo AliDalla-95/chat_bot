@@ -1,3 +1,6 @@
+import smtplib
+import random
+from email.message import EmailMessage
 import os
 import re
 from signal import SIGINT, SIGTERM
@@ -41,7 +44,8 @@ pending_submissions = {}  # Format: {user_id: {link_id, chat_id, message_id, des
 user_pages = {}
 
 # Conversation states
-EMAIL, PHONE = range(2)
+# Original: EMAIL, PHONE = range(2)
+EMAIL, CODE_VERIFICATION, PHONE = range(3)
 WITHDRAW_AMOUNT = 0
 CARRIER_SELECTION = 3
 
@@ -69,6 +73,33 @@ def user_exists(telegram_id: int) -> bool:
     except Exception as e:
         logger.error(f"Error in user_exists: {e}")
         return False
+
+
+
+import smtplib
+import random
+from email.message import EmailMessage
+
+def generate_confirmation_code() -> str:
+    return ''.join(random.choices('0123456789', k=6))
+
+def send_confirmation_email(email: str, code: str) -> bool:
+    try:
+        msg = EmailMessage()
+        msg.set_content(f"Your confirmation code is: {code}")
+        msg['Subject'] = "Confirmation Code"
+        msg['From'] = config.EMAIL_FROM
+        msg['To'] = email
+
+        with smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT) as server:
+            server.starttls()
+            server.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
+            server.send_message(msg)
+            return True
+    except Exception as e:
+        logger.error(f"Failed to send email to {email}: {e}")
+        return False
+
 
 def store_message_id(telegram_id: int, chat_id: int, link_id: int, message_id: int) -> None:
     """Store Telegram message ID with user and chat context"""
@@ -277,38 +308,93 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
 async def process_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Process email input and request phone number"""
     try:
         user_lang = update.effective_user.language_code or 'en'
         email = update.message.text.strip()
+
         if email in ["Cancel ❌", "إلغاء ❌"]:
-            cancel_msg = "🚫 Operation cancelled" if user_lang != 'ar' else "🚫 تم الإلغاء"
-            await update.message.reply_text(cancel_msg)
-            await show_menu(update, context)
+            await cancel_registration(update, context)
             return ConversationHandler.END
+
         if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
-            msg = "صيغة الإيميل ليست صحيحة يرجى إدخال بريدك الإلكتروني بشكل صحيح ⚠️" if user_lang.startswith('ar') else "Invalid email format ⚠️"
-            raise ValueError(msg)
-            
+            error_msg = "❌ Invalid email format" if user_lang != 'ar' else "❌ صيغة البريد الإلكتروني غير صحيحة"
+            await update.message.reply_text(error_msg)
+            return EMAIL
+
+        # Generate and send confirmation code
+        code = generate_confirmation_code()
+        context.user_data['confirmation_code'] = code
         context.user_data['email'] = email
-        
-        msg = "يرجى الضغط على زر تأكيد رقم هاتفك من القائمة لتأكيد الرقم 📱" if user_lang.startswith('ar') else "📱 Share Phone Number"
-        contact_keyboard = ReplyKeyboardMarkup(
-            [[KeyboardButton(msg, request_contact=True)]],
-            resize_keyboard=True,
-            one_time_keyboard=True
+
+        if not send_confirmation_email(email, code):
+            error_msg = "Failed to send code" if user_lang != 'ar' else "فشل إرسال الرمز"
+            await update.message.reply_text(error_msg)
+            return EMAIL
+
+        success_msg = (
+            "📧 A confirmation code has been sent to your email or in spam. Please enter it here:" 
+            if user_lang != 'ar' else 
+            "📧 تم إرسال رمز التأكيد إلى بريدك الإلكتروني أو في رسائل البريد العشوائي (سبام) . الرجاء إدخاله هنا:"
         )
-        msg = " من فضلك قم بتأكيد رقم هاتفك لمتابعة التسجيل " if user_lang.startswith('ar') else "Please share your phone number:"
-        await update.message.reply_text(
-            msg,
-            reply_markup=contact_keyboard
-        )
-        return PHONE
+        await update.message.reply_text(success_msg)
+        return CODE_VERIFICATION
+
     except Exception as e:
-        msg = "صيغة البريد الإلكتروني التي قمت بإدخالها ليست صحيحة يرجى كتابة بريدك الإلكتروني لمتابعة التسجيل ❌ " if user_lang.startswith('ar') else "❌ Invalid email format! Please enter a valid email."
-        logger.warning(f"Invalid email input: {e}")
-        await update.message.reply_text(msg)
+        logger.error(f"Email processing error: {e}")
+        error_msg = "⚠️ Error processing email" if user_lang != 'ar' else "⚠️ خطأ في معالجة البريد"
+        await update.message.reply_text(error_msg)
         return EMAIL
+
+
+async def verify_confirmation_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        user_lang = update.effective_user.language_code or 'en'
+        user_code = update.message.text.strip()
+        stored_code = context.user_data.get('confirmation_code')
+
+        if user_code in ["Cancel ❌", "إلغاء ❌"]:
+            await cancel_registration(update, context)
+            return ConversationHandler.END
+
+        if not stored_code:
+            error_msg = "Session expired" if user_lang != 'ar' else "انتهت الجلسة"
+            await update.message.reply_text(error_msg)
+            return ConversationHandler.END
+
+        if user_code == stored_code:
+            # Proceed to phone number collection
+            contact_msg = (
+                "📱 Share your phone number using the button below:" 
+                if user_lang != 'ar' else 
+                "📱 شارك رقم هاتفك باستخدام الزر أدناه:"
+            )
+            contact_btn = (
+                "Share Phone Number" 
+                if user_lang != 'ar' else 
+                "مشاركة رقم الهاتف"
+            )
+            cancel_btn = "Cancel ❌" if user_lang != 'ar' else "إلغاء ❌"
+            keyboard = ReplyKeyboardMarkup(
+                [
+                    [KeyboardButton(contact_btn, request_contact=True)],  # First row: contact button
+                    [cancel_btn]                                          # Second row: cancel button
+                ],
+                resize_keyboard=True,
+                one_time_keyboard=True
+            )
+            await update.message.reply_text(contact_msg, reply_markup=keyboard)
+            return PHONE
+        else:
+            error_msg = "❌ Invalid code" if user_lang != 'ar' else "❌ رمز غير صحيح"
+            await update.message.reply_text(error_msg)
+            return CODE_VERIFICATION
+
+    except Exception as e:
+        logger.error(f"Code verification error: {e}")
+        error_msg = "⚠️ Verification failed" if user_lang != 'ar' else "⚠️ فشل التحقق"
+        await update.message.reply_text(error_msg)
+        return CODE_VERIFICATION
+
 
 async def process_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Process contact information and complete registration"""
@@ -316,7 +402,12 @@ async def process_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         user_lang = update.effective_user.language_code or 'en'
         user = update.effective_user
         contact = update.message.contact
-        
+
+
+        if update.message.text and update.message.text.strip() in ["Cancel ❌", "إلغاء ❌"]:
+            await cancel_registration(update, context)
+            return ConversationHandler.END
+
         if contact.user_id != user.id:
             msg = "من فضلك قم بمشاركة رقم هاتفك الصحيح ❌ " if user_lang.startswith('ar') else "❌ Please share your own phone number!"
             await update.message.reply_text(msg)
@@ -1071,6 +1162,7 @@ async def cancel_registration(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data.clear()
     msg = "تم إلغاء التسجيل ❌" if user_lang.startswith('ar') else "❌ Registration cancelled"
     await update.message.reply_text(msg)
+    await show_menu(update, context)
     return ConversationHandler.END
 
 async def restart_registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1113,8 +1205,13 @@ def main() -> None:
                 MessageHandler(filters.Regex(r'^(/start|/register)'), restart_registration),
                 MessageHandler(filters.Regex(r'^(Cancel ❌|إلغاء ❌)$'), cancel_email)
             ],
+            CODE_VERIFICATION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, verify_confirmation_code),
+                # Cancel/retry handlers...
+            ],
             PHONE: [
                 MessageHandler(filters.CONTACT, process_phone),
+                MessageHandler(filters.TEXT | filters.CONTACT, process_phone),
                 CommandHandler('cancel', cancel_registration),
                 MessageHandler(filters.Regex(r'^(/start|/register)'), restart_registration),
                 MessageHandler(filters.ALL, lambda u,c: u.message.reply_text("❌ Please use contact button!"))

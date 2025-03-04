@@ -10,3 +10,10 @@ ADMIN_IDS = [6106281772, 6106281772]  # Replace with actual Telegram user IDs of
 DB_PATH = "bot_base.db"
 
 DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/Test"
+
+# Email Configuration
+SMTP_SERVER = 'smtp.gmail.com'
+SMTP_PORT = 587
+SMTP_USERNAME = 'alidalla9500@gmail.com'  # Your actual email
+SMTP_PASSWORD = 'yeke tmiq yxbi ckfy '    # The 16-digit app password
+EMAIL_FROM = 'alidalla9500@gmail.com'    # Same as username
