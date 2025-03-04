@@ -14,6 +14,6 @@ DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/Test"
 # Email Configuration
 SMTP_SERVER = 'smtp.gmail.com'
 SMTP_PORT = 587
-SMTP_USERNAME = 'alidalla9500@gmail.com'  # Your actual email
-SMTP_PASSWORD = 'yeke tmiq yxbi ckfy '    # The 16-digit app password
-EMAIL_FROM = 'alidalla9500@gmail.com'    # Same as username
+SMTP_USERNAME = 'ironm2249@gmail.com'  # Your actual email
+SMTP_PASSWORD = 'bevu ggwh ohmp eihh '    # The 16-digit app password
+EMAIL_FROM = 'ironm2249@gmail.com'    # Same as username

@@ -125,12 +125,12 @@ def send_confirmation_email(email: str, code: str) -> bool:
         msg = EmailMessage()
         msg.set_content(f"Your confirmation code is: {code}")
         msg['Subject'] = "Confirmation Code"
-        msg['From'] = "alidalla9500@gmail.com"  # Use your email
+        msg['From'] = "ironm2249@gmail.com"  # Use your email
         msg['To'] = email
 
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
-            server.login("alidalla9500@gmail.com", "yeke tmiq yxbi ckfy ")  # Use app password
+            server.login("ironm2249@gmail.com", "bevu ggwh ohmp eihh ")  # Use app password
             server.send_message(msg)
             return True
     except Exception as e:
@@ -842,8 +842,8 @@ async def email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     # Ask for code verification
     cancel_btn = "إلغاء ❌" if user_lang.startswith('ar') else "Cancel ❌"
     await update.message.reply_text(
-        "Enter the 6-digit code sent to your email:" if user_lang != 'ar' 
-        else "أدخل الرمز المكون من 6 أرقام المرسل إلى بريدك:",
+        "Enter the 6-digit code sent to your email or in your email in spam:" if user_lang != 'ar' 
+        else "أدخل الرمز المكون من 6 أرقام المرسل إلى بريدك الإلكتروني من الممكن إيجاده في البريد العشوائي(سبام):",
         reply_markup=ReplyKeyboardMarkup([[cancel_btn]], resize_keyboard=True)
     )
     return CODE_VERIFICATION
