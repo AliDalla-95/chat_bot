@@ -73,25 +73,25 @@ logger = logging.getLogger(__name__)
 MAIN_MENU = [
     ["📝 Register","Start"],
     ["🔍 Input Your YouTube URL Channel"],
-    ["📋 My Profile"],  # Added new menu item
+    ["📋 My Profile", "My Channels Done"],  # Added new menu item
     ["📌 My Channels", "📌 My Channels Accept"],
-    ["🗑 Delete Channel"]  # Added new menu item
+    ["🗑 Delete Channel","Delete Channel accept"]  # Added new menu item
 ]
 
 MAIN_MENU_ar = [
     ["التسجيل 📝","بدء 👋"],
     ["أدخل رابط القناة للتحقق منه 🔍"],
-    ["الملف الشخصي 📋"],  # Added new menu item
+    ["الملف الشخصي 📋", "قنواتي التي تم إنجازها"],  # Added new menu item
     ["قنواتي التي أدخلتها 📌","قنواتي التي تم قبولها بعد الدفع 📌"],
-    ["حذف قناة 🗑"]  # Added new menu item
+    ["حذف قناة 🗑","حذف قناة مقبولة"]  # Added new menu item
 ]
 
 ADMIN_MENU = [
     ["Start", "👑 Admin Panel"],
     ["🔍 Input Your YouTube URL Channel"],
-    ["📋 My Profile"],  # Added new menu item
+    ["📋 My Profile", "My Channels Done"],  # Added new menu item
     ["📌 My Channels","📌 My Channels Accept"],
-    ["🗑 Delete Channel"]  # Added for admin too
+    ["🗑 Delete Channel","Delete Channel accept"]  # Added new menu item
 ]
 
 
@@ -256,6 +256,8 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await list_channels(update, context)
         elif text == "قنواتي التي تم قبولها بعد الدفع 📌":  # New handler
             await list_channels_paid(update, context)
+        elif text == "قنواتي التي تم إنجازها":  # New handler
+            await list_channels_Done(update, context)
         elif text == "الملف الشخصي 📋":
             await profile_command(update, context)
         elif text == "🔙 Main Menu":
@@ -275,6 +277,8 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await list_channels(update, context)
         elif text == "📌 My Channels Accept":  # New handler
             await list_channels_paid(update, context)
+        elif text == "My Channels Done":  # New handler
+            await list_channels_Done(update, context)
         elif text == "📋 My Profile":
             await profile_command(update, context)
         elif text == "🔙 Main Menu":
@@ -393,6 +397,84 @@ async def list_channels_paid(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.error(f"List channels error: {str(e)}")
         msg = " حدث خطأ أثناء إضافة القناة ❌" if user_lang.startswith('ar') else "❌ Error retrieving your channels"
         await update.message.reply_text(msg)
+
+
+
+async def list_channels_Done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """List all submitted channels for the current user with likes count"""
+    user = update.effective_user
+    
+    # Check if user is banned
+    user_lang = update.effective_user.language_code or 'en'
+    if await is_banned(user.id):
+        msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
+        await update.message.reply_text(msg)
+        return ConversationHandler.END
+        
+    try:
+        # Check if user is registered
+        if not await is_registered(user.id):
+            msg = " من فضلك قم بالتسجيل أولا ❌" if user_lang.startswith('ar') else "❌ Please Register First."
+            await update.message.reply_text(msg)
+            return
+            
+        conn = get_conn()
+        c = conn.cursor()
+        
+        # Get channels with likes count FOR CURRENT USER ONLY
+        c.execute("""
+            SELECT l.description, l.youtube_link, l.channel_id, l.submission_date,subscription_count,
+                   COALESCE(k.channel_likes, 0) AS likes_count
+            FROM links l
+            LEFT JOIN likes k ON l.id = k.id
+            WHERE l.added_by = %s
+            ORDER BY l.submission_date DESC
+        """, (user.id,))  # Make sure user.id is correctly passed
+        
+        channels = c.fetchall()
+        conn.close()
+        
+        if not channels:
+            msg = "ليس لدي قنوات تم قبولها يرجى إضافة قنوات أو الدفع للقنوات التي تم إضافتها سابقا📭" if user_lang.startswith('ar') else "📭 You haven't submitted any channels yet or did not paid for them."
+            await update.message.reply_text(msg)
+            return
+            
+        response = ["📋 Your Submitted Channels:"]
+        for idx, (name, url, channel_id, date, likes, subscription_count) in enumerate(channels, 1):
+            if user_lang.startswith('ar'):
+                response.append(
+                    f"{idx}. {name}\n"
+                    f"🔗 {url}\n"
+                    f"🆔 معرف القناة: {channel_id}\n"
+                    f"📅 تاريخ إضافتها: {date}\n"
+                    f"❤️ المطلوب: {subscription_count}\n"
+                    f"❤️ عدد الاشتراكات: {likes}\n"
+                    f"{'-'*40}"
+                )
+            else:
+                response.append(
+                    f"{idx}. {name}\n"
+                    f"🔗 {url}\n"
+                    f"🆔 Channel ID: {channel_id}\n"
+                    f"📅 Submitted: {date}\n"
+                    f"❤️ Required: {subscription_count}\n"
+                    f"❤️ Likes: {likes}\n"
+                    f"{'-'*40}"
+                )
+            
+        # Split long messages to avoid Telegram message limits
+        message = "\n\n".join(response)
+        if len(message) > 4096:
+            for x in range(0, len(message), 4096):
+                await update.message.reply_text(message[x:x+4096])
+        else:
+            await update.message.reply_text(message)
+
+    except Exception as e:
+        logger.error(f"List channels error: {str(e)}")
+        msg = " حدث خطأ أثناء إضافة القناة ❌" if user_lang.startswith('ar') else "❌ Error retrieving your channels"
+        await update.message.reply_text(msg)
+
 
 
 # ========== YOUTUBE CHANNEL VERIFICATION ==========
@@ -842,8 +924,8 @@ async def email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     # Ask for code verification
     cancel_btn = "إلغاء ❌" if user_lang.startswith('ar') else "Cancel ❌"
     await update.message.reply_text(
-        "Enter the 6-digit code sent to your email or in your email in spam:" if user_lang != 'ar' 
-        else "أدخل الرمز المكون من 6 أرقام المرسل إلى بريدك الإلكتروني من الممكن إيجاده في البريد العشوائي(سبام):",
+        "📧 A confirmation code has been sent to your email or in spam. Please enter it here:" if user_lang != 'ar' 
+        else "📧 تم إرسال رمز التأكيد إلى بريدك الإلكتروني أو في رسائل البريد العشوائي (سبام) . الرجاء إدخاله هنا:",
         reply_markup=ReplyKeyboardMarkup([[cancel_btn]], resize_keyboard=True)
     )
     return CODE_VERIFICATION
@@ -1123,8 +1205,27 @@ async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
     return "AWAIT_CHANNEL_URL"
 
+async def delete_channel_accept(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only channel deletion flow"""
+    user = update.effective_user
+    user_lang = update.effective_user.language_code or 'en'
+    if await is_banned(user.id):
+        msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
+        await update.message.reply_text(msg)
+        return ConversationHandler.END
+    if not await is_registered(user.id):
+        msg = " من فضلك قم بالتسجيل أولا ❌" if user_lang.startswith('ar') else "❌ Please Register First."
+        await update.message.reply_text(msg)
+        return ConversationHandler.END
+    # user = update.effective_user
+    # if str(user.id) != ADMIN_TELEGRAM_ID:
+    #     await update.message.reply_text("🚫 Access denied!")
+    #     return ConversationHandler.END
+    msg = "من فضلك أدخل رابط القناة لحذفها" if user_lang.startswith('ar') else "Enter Channel URL to delete:"
+    await update.message.reply_text(msg)
+    return "AWAIT_CHANNEL_URL_ACCEPT"
 
-async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def confirm_delete_accept(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Confirm and delete channel"""
     user_lang = update.effective_user.language_code or 'en'
     url = update.message.text.strip()
@@ -1165,6 +1266,48 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         conn.close()
     return ConversationHandler.END
+
+async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Confirm and delete channel"""
+    user_lang = update.effective_user.language_code or 'en'
+    url = update.message.text.strip()
+    conn = get_conn()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT description FROM links_success WHERE youtube_link = %s and added_by = %s", (url,update.effective_user.id,))
+        result = c.fetchone()
+        if not result:
+            msg = " عذرا القناة غير موجودة لحذفها ❌" if user_lang.startswith('ar') else "❌ Channel not found"
+            await update.message.reply_text(msg)
+            return ConversationHandler.END
+
+        channel_name = result[0]
+        c.execute("SELECT id FROM links_success WHERE youtube_link = %s and added_by = %s", (url, update.effective_user.id,))
+        result_id = c.fetchone()
+        msg = " عذرا القناة غير موجودة لحذفها ❌" if user_lang.startswith('ar') else "❌ Channel not found"
+        if not result_id:
+            await update.message.reply_text(msg)
+            return ConversationHandler.END
+        # result_id_for_link = result_id[0]
+        c.execute("DELETE FROM links_success WHERE youtube_link = %s and added_by = %s", (url,update.effective_user.id,))
+        # c.execute("DELETE FROM user_link_status WHERE link_id = %s", (result_id_for_link,))
+        conn.commit()
+        if user_lang.startswith('ar'):
+            await update.message.reply_text(
+                f"✅ تم حذف القناة بنجاح :\n"
+                f"📛 أسم القناة : {channel_name}\n"
+                f"🔗 رابط القناة: {url}"
+            )
+        else:
+            await update.message.reply_text(
+                f"✅ Channel deleted:\n"
+                f"📛 Name: {channel_name}\n"
+                f"🔗 URL: {url}"
+            )
+    finally:
+        conn.close()
+    return ConversationHandler.END
+
 
 AWAIT_CHANNEL_URL_ADMIN, AWAIT_CHANNEL_ADDER_ADMIN = range(2)
 
@@ -1833,6 +1976,8 @@ def main() -> None:
                 MessageHandler(filters.Regex(r"^📋 My Profile$"), profile_command),
                 MessageHandler(filters.Regex(r"^📌 My Channels$"), list_channels),
                 MessageHandler(filters.Regex(r"^📌 My Channels Accept$"), list_channels_paid),
+                MessageHandler(filters.Regex(r"^My Channels Done$"), list_channels_Done),
+                MessageHandler(filters.Regex(r"^Delete Channel accept$"), delete_channel_accept),
                 MessageHandler(filters.Regex(r"^🗑 Delete  All Channels$"), delete_channel_admin),
                 MessageHandler(filters.Regex(r"^🚫 Ban Client$"), ban_client),
                 MessageHandler(filters.Regex(r"^✅ UnBan Client$"), unban_client),
@@ -1841,10 +1986,13 @@ def main() -> None:
             ],
             states={
                 "AWAIT_CHANNEL_URL": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)],
+                "AWAIT_CHANNEL_URL_ACCEPT": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete_accept)],
                 "AWAIT_CHANNEL_URL_ADMIN": [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_channel_url_admin)],
                 "AWAIT_ADDER": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete_admin)],
                 CHANNEL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_channel_url)],
-                SUBSCRIPTION_CHOICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_subscription_choice)]
+                AWAIT_PAYMENT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_id)],
+                SUBSCRIPTION_CHOICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_subscription_choice)],
+                COMPANY_CHOICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, company_handler)],
             },
             fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)],
             map_to_parent={ConversationHandler.END: ConversationHandler.END}
@@ -1857,6 +2005,8 @@ def main() -> None:
                 MessageHandler(filters.Regex(r"^📋 My Profile$"), profile_command),
                 MessageHandler(filters.Regex(r"^🔍 Input Your YouTube URL Channel$"), handle_channel_verification),
                 MessageHandler(filters.Regex(r"^🗑 Delete Channel$"), delete_channel),
+                MessageHandler(filters.Regex(r"^Delete Channel accept$"), delete_channel_accept),
+                MessageHandler(filters.Regex(r"^حذف قناة مقبولة$"), delete_channel_accept),
                 MessageHandler(filters.Regex(r"^التسجيل 📝$"), handle_registration),
                 MessageHandler(filters.Regex(r"^الملف الشخصي 📋$"), profile_command),
                 MessageHandler(filters.Regex(r"^أدخل رابط القناة للتحقق منه 🔍$"), handle_channel_verification),
@@ -1876,6 +2026,7 @@ def main() -> None:
                 # COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, country_handler)],
                 CHANNEL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_channel_url)],
                 "AWAIT_CHANNEL_URL": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete)],
+                "AWAIT_CHANNEL_URL_ACCEPT": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete_accept)],
                 AWAIT_PAYMENT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_id)],
                 SUBSCRIPTION_CHOICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_subscription_choice)],
                 COMPANY_CHOICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, company_handler)],
