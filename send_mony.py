@@ -28,11 +28,13 @@ PER_PAGE = 5
 
 # Conversation states
 VIEWING, DETAILS = range(2)
+SHOWALL_PER_PAGE = 5  # You can make this different from pending withdrawals
 
 def connect_db():
     """Create and return a PostgreSQL database connection"""
     return psycopg2.connect(DB_URL)
 
+# Update the start menu
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command with admin menu"""
     user_id = update.effective_user.id
@@ -40,7 +42,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         
         menu = ReplyKeyboardMarkup(
-            [["🔄 Refresh", "📋 View Withdrawals"], ["🏠 Start", "/start"]],
+            [["🔄 Refresh", "📋 View Withdrawals"], 
+             ["📋 Show Processed", "🏠 Start"],  # New button
+             ["/start"]],
             resize_keyboard=True
         )
         await update.message.reply_text(
@@ -52,16 +56,70 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Welcome to our service!")
         return ConversationHandler.END
 
+# Update handle_menu function
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle admin menu selections"""
     text = update.message.text
     if text == "📋 View Withdrawals":
         await show_withdrawals(update, context, page=0)
+    elif text == "📋 Show Processed":  # New handler
+        await show_processed_withdrawals(update, context, page=0)
     elif text == "🔄 Refresh":
         await show_withdrawals(update, context, page=0)
     elif text in ("🏠 Start", "/start"):
         await start(update, context)
     return VIEWING
+
+
+# Add new function for processed withdrawals
+async def show_processed_withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE, page=0):
+    """Show paginated processed withdrawals list"""
+    try:
+        context.user_data.pop('processed_list_message_id', None)
+        withdrawals, total_pages = get_withdrawals(page, status='processed')
+        page = max(0, min(page, total_pages - 1)) if total_pages > 0 else 0
+        
+        message = f"📋 Processed Withdrawals (Page {page+1}/{total_pages}):\n\n" if withdrawals else "No processed withdrawals found"
+        buttons = []
+        
+        for wd in withdrawals:
+            message += (
+                f"✅ #{wd['id']} - {wd['amount'] * 100} pts\n" f"Email: {wd['email']}\n" f"Phone: {wd['phone']}\n"
+                f"👤 {wd['full_name']} | 📅 {wd['processed_date'].strftime('%Y-%m-%d')}\n\n"
+            )
+        
+        # Pagination controls
+        pagination = []
+        if page > 0:
+            pagination.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"processed_page_{page-1}"))
+        if total_pages > 1 and page < total_pages - 1:
+            pagination.append(InlineKeyboardButton("Next ➡️", callback_data=f"processed_page_{page+1}"))
+        
+        if pagination:
+            buttons.append(pagination)
+        
+        reply_markup = InlineKeyboardMarkup(buttons) if buttons else None
+        
+        if update.callback_query:
+            try:
+                await update.callback_query.edit_message_text(
+                    text=message, reply_markup=reply_markup
+                )
+            except BadRequest as e:
+                if "Message is not modified" not in str(e):
+                    raise
+        else:
+            msg = await update.message.reply_text(text=message, reply_markup=reply_markup)
+            context.user_data['processed_list_message_id'] = msg.message_id
+        
+        context.user_data['current_processed_page'] = page
+        return VIEWING
+        
+    except Exception as e:
+        logger.error(f"Error showing processed withdrawals: {e}")
+        await update.effective_message.reply_text("⚠️ Error loading processed withdrawals")
+        return ConversationHandler.END
+
 
 async def show_withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE, page=0):
     """Show paginated withdrawals list with state management"""
@@ -111,14 +169,21 @@ async def show_withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE, p
         await update.effective_message.reply_text("⚠️ Error loading withdrawals")
         return ConversationHandler.END
 
+
 async def handle_pagination(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle pagination callbacks"""
+    """Handle pagination callbacks for both pending and processed"""
     query = update.callback_query
     await query.answer()
     
     try:
-        page = int(query.data.split('_')[1])
-        return await show_withdrawals(update, context, page=page)
+        if query.data.startswith('processed_page_'):
+            # Processed withdrawals pagination
+            page = int(query.data.split('_')[2])
+            return await show_processed_withdrawals(update, context, page=page)
+        else:
+            # Pending withdrawals pagination
+            page = int(query.data.split('_')[1])
+            return await show_withdrawals(update, context, page=page)
     except Exception as e:
         logger.error(f"Pagination error: {e}")
         await query.edit_message_text("⚠️ Error changing page")
@@ -192,7 +257,7 @@ async def mark_as_sent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Refresh withdrawals list
         current_page = context.user_data.get('current_page', 0)
         await show_withdrawals(update, context, page=current_page)
-        
+        # await start(update, context)
     except Exception as e:
         logger.error(f"Processing error: {e}")
         if query.from_user:
@@ -241,24 +306,25 @@ async def show_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ Error loading details")
         return VIEWING
 
-def get_withdrawals(page: int):
-    """Get paginated withdrawals from database"""
+# Update get_withdrawals function
+def get_withdrawals(page: int, status='pending'):
+    """Get paginated withdrawals from database with status filter"""
     try:
         with connect_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute("""
                     SELECT * FROM withdrawals
-                    WHERE status = 'pending'
-                    ORDER BY id DESC
+                    WHERE status = %s
+                    ORDER BY processed_date DESC
                     LIMIT %s OFFSET %s
-                """, (PER_PAGE, page * PER_PAGE))
+                """, (status, SHOWALL_PER_PAGE, page * SHOWALL_PER_PAGE))
                 
                 results = cursor.fetchall()
                 columns = [desc[0] for desc in cursor.description]
                 
-                cursor.execute("SELECT COUNT(*) FROM withdrawals WHERE status = 'pending'")
+                cursor.execute("SELECT COUNT(*) FROM withdrawals WHERE status = %s", (status,))
                 total = cursor.fetchone()[0]
-                total_pages = (total + PER_PAGE - 1) // PER_PAGE if total > 0 else 0
+                total_pages = (total + SHOWALL_PER_PAGE - 1) // SHOWALL_PER_PAGE if total > 0 else 0
                 
                 return [dict(zip(columns, row)) for row in results], total_pages
     except Exception as e:
@@ -290,7 +356,8 @@ def main():
         states={
             VIEWING: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu),
-                CallbackQueryHandler(handle_pagination, pattern=r"^page_\d+"),
+                # Modified pattern to match both pagination types
+                CallbackQueryHandler(handle_pagination, pattern=r"^(page|processed_page)_\d+"),
                 CallbackQueryHandler(show_detail, pattern=r"^detail_")
             ],
             DETAILS: [
