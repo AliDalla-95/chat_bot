@@ -228,9 +228,10 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
             cur.execute("""
                 INSERT INTO links (
                     youtube_link, description, added_by, adder, 
-                    submission_date, channel_id, subscription_count, id_pay
+                    submission_date, channel_id, id_pay, subscription_count 
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, record[1:9])
+            """, (record[1],record[2],record[3],record[4],record[5],record[6],record[9],record[8]))
+
             
             # Insert to admin log with price
             cur.execute("""
@@ -249,7 +250,8 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
             cur.execute("DELETE FROM links_success WHERE id = %s", (record[0],))
             
             conn.commit()
-            
+            r = record[1:9]
+            print(f"{r}")
             # Notify user with price
             try:
                 await context.bot.send_message(

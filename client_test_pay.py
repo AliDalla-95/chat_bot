@@ -363,7 +363,7 @@ async def list_channels_paid(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
             
         response = ["📋 Your Submitted Channels:"]
-        for idx, (name, url, channel_id, date, likes, subscription_count) in enumerate(channels, 1):
+        for idx, (name, url, channel_id, date, subscription_count, likes) in enumerate(channels, 1):
             if user_lang.startswith('ar'):
                 response.append(
                     f"{idx}. {name}\n"
@@ -423,12 +423,9 @@ async def list_channels_Done(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         # Get channels with likes count FOR CURRENT USER ONLY
         c.execute("""
-            SELECT l.description, l.youtube_link, l.channel_id, l.submission_date,subscription_count,
-                   COALESCE(k.channel_likes, 0) AS likes_count
-            FROM links l
-            LEFT JOIN likes k ON l.id = k.id
-            WHERE l.added_by = %s
-            ORDER BY l.submission_date DESC
+            SELECT channel_name, url , channel_id, channel_likes FROM likes
+            WHERE user_id = %s
+            ORDER BY id DESC
         """, (user.id,))  # Make sure user.id is correctly passed
         
         channels = c.fetchall()
@@ -438,27 +435,23 @@ async def list_channels_Done(update: Update, context: ContextTypes.DEFAULT_TYPE)
             msg = "ليس لدي قنوات تم قبولها يرجى إضافة قنوات أو الدفع للقنوات التي تم إضافتها سابقا📭" if user_lang.startswith('ar') else "📭 You haven't submitted any channels yet or did not paid for them."
             await update.message.reply_text(msg)
             return
-            
+        
         response = ["📋 Your Submitted Channels:"]
-        for idx, (name, url, channel_id, date, likes, subscription_count) in enumerate(channels, 1):
+        for idx, (channel_name, url, channel_id, channel_likes) in enumerate(channels, 1):
             if user_lang.startswith('ar'):
                 response.append(
-                    f"{idx}. {name}\n"
+                    f"{idx}. {channel_name}\n"
                     f"🔗 {url}\n"
                     f"🆔 معرف القناة: {channel_id}\n"
-                    f"📅 تاريخ إضافتها: {date}\n"
-                    f"❤️ المطلوب: {subscription_count}\n"
-                    f"❤️ عدد الاشتراكات: {likes}\n"
+                    f"❤️ عدد الاشتراكات: {channel_likes}\n"
                     f"{'-'*40}"
                 )
             else:
                 response.append(
-                    f"{idx}. {name}\n"
+                    f"{idx}. {channel_name}\n"
                     f"🔗 {url}\n"
                     f"🆔 Channel ID: {channel_id}\n"
-                    f"📅 Submitted: {date}\n"
-                    f"❤️ Required: {subscription_count}\n"
-                    f"❤️ Likes: {likes}\n"
+                    f"❤️ Likes: {channel_likes}\n"
                     f"{'-'*40}"
                 )
             

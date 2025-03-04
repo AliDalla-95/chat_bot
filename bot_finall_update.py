@@ -186,17 +186,34 @@ def update_likes(link_id: int, points: int = 1) -> None:
     """Update user's points balance"""
     try:
         with connect_db() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor()            
             cursor.execute("""
             UPDATE likes SET channel_likes = channel_likes + %s
             WHERE id = %s
             """, (1,link_id))
+            
+            cursor.execute(
+                "SELECT channel_likes FROM likes WHERE id = %s",
+                (link_id,)
+            )
+            user_data = cursor.fetchone()            
+            cursor.execute(
+                "SELECT subscription_count FROM links WHERE id = %s",
+                (link_id,)
+            )
+            user_data1 = cursor.fetchone()
+            if user_data[0] == user_data1[0]:
+                cursor.execute(
+                    "DELETE FROM links WHERE id = %s",
+                    (link_id,)
+                )
             conn.commit()
 
     except Exception as e:
         logger.error(f"Error in update_likes: {e}")
         conn.rollback()
-     
+    finally:
+        conn.close()
 
 ##########################
 #    Command Handlers    #
