@@ -23,6 +23,9 @@ from telegram.ext import (
     ConversationHandler,
     filters
 )
+import smtplib
+import random
+from email.message import EmailMessage
 import psycopg2
 import ocr_processor
 import scan_image4
@@ -73,12 +76,6 @@ def user_exists(telegram_id: int) -> bool:
     except Exception as e:
         logger.error(f"Error in user_exists: {e}")
         return False
-
-
-
-import smtplib
-import random
-from email.message import EmailMessage
 
 def generate_confirmation_code() -> str:
     return ''.join(random.choices('0123456789', k=6))
@@ -364,6 +361,7 @@ async def process_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         logger.error(f"Email processing error: {e}")
         error_msg = "⚠️ Error processing email" if user_lang != 'ar' else "⚠️ خطأ في معالجة البريد"
         await update.message.reply_text(error_msg)
+        await show_menu(update, context)
         return EMAIL
 
 
@@ -412,8 +410,9 @@ async def verify_confirmation_code(update: Update, context: ContextTypes.DEFAULT
 
     except Exception as e:
         logger.error(f"Code verification error: {e}")
-        error_msg = "⚠️ Verification failed" if user_lang != 'ar' else "⚠️ فشل التحقق"
+        error_msg = "⚠️ Verification failed try again" if user_lang != 'ar' else "⚠️ فشل التحقق أعد المحاولة"
         await update.message.reply_text(error_msg)
+        await show_menu(update, context)
         return CODE_VERIFICATION
 
 
@@ -688,6 +687,7 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             msg = "أمر غير معروف. يرجى استخدام أزرار القائمة ❌ " if user_lang.startswith('ar') else "❌ Unknown command. Please use the menu buttons."
             await update.message.reply_text(msg)
+            await show_menu(update,context)
             
     except Exception as e:
         logger.error(f"Text command error: {e}")
