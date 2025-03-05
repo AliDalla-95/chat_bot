@@ -168,7 +168,7 @@ async def verify_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Handle cancellation
     if user_code in ["Cancel ❌", "إلغاء ❌"]:
         msg = "تم إلغاء التسجيل ❌" if user_lang.startswith('ar') else "❌ Registration cancelled"
-        await update.message.reply_text(msg, reply_markup=get_menu(user_lang, update.effective_user.id))
+        await update.message.reply_text(msg, reply_markup=await get_menu(user_lang, update.effective_user.id))
         return ConversationHandler.END
 
     if not stored_code:
@@ -205,9 +205,10 @@ async def verify_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     return PHONE
 
 
-def get_menu(user_lang: str,user_id: int) -> ReplyKeyboardMarkup:
+async def get_menu(user_lang: str,user_id: int) -> ReplyKeyboardMarkup:
     """Return appropriate menu based on user status"""
-    if is_admins(user_id):
+    user_lang = user_lang
+    if await is_admins(user_id):
         return ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True)
     if user_lang == 'ar':
         return ReplyKeyboardMarkup(MAIN_MENU_ar, resize_keyboard=True)
@@ -233,10 +234,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         msg = "🚫 تم إلغاء وصولك " if user_lang.startswith('ar') else "🚫 Your access has been revoked"
         await update.message.reply_text(msg)
         return ConversationHandler.END
-    menu = get_menu(user_lang, user.id)
+    menu = await get_menu(user_lang, user.id)
     # Auto-register admin if not in database
     msg = " أهلا وسهلا  👋" if user_lang.startswith('ar') else "👋 Welcome"
-    if is_admins(user.id) and not await is_registered(user.id):
+    if await is_admins(user.id) and not await is_registered(user.id):
         conn = get_conn()
         c = conn.cursor()
         c.execute("""
@@ -320,7 +321,7 @@ async def show_main_menu(update: Update, user):
     user_lang = update.effective_user.language_code or 'en'
     await update.message.reply_text(
         "Main Menu:",
-        reply_markup=get_menu(user_lang,user.id)
+        reply_markup=await get_menu(user_lang,user.id)
     )
 
 async def handle_registration(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -732,7 +733,7 @@ async def process_channel_url(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         logger.error(f"Channel processing errors: {str(e)}")
         msg = " حدث خطأ غير متوقع يرجى إعادة المحاولة لاحقا ❌" if user_lang.startswith('ar') else "❌ An error occurred. Please try again"
-        await update.message.reply_text(msg,reply_markup=get_menu(user_lang,user.id))
+        await update.message.reply_text(msg,reply_markup=await get_menu(user_lang,user.id))
     return ConversationHandler.END
 
 
@@ -911,7 +912,7 @@ async def cancel_registration(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_lang = update.effective_user.language_code or 'en'
     context.user_data.clear()
     msg = "تم إلغاء التسجيل ❌" if user_lang.startswith('ar') else "❌ Registration cancelled"
-    await update.message.reply_text(msg,reply_markup=get_menu(user_lang,user.id))
+    await update.message.reply_text(msg,reply_markup=await get_menu(user_lang,user.id))
     return ConversationHandler.END
 
 
@@ -1024,7 +1025,7 @@ async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 f"📱 رقم هاتفك: {escape_markdown_2(phone_number)}\n"
                 f"🌍 بلدك: {escape_markdown(country_name)}\n"
                 f"⭐ تاريخ التسجيل: {escape_markdown_2(str(registration_date))}",
-                reply_markup=get_menu(user_lang,update.effective_user.id)
+                reply_markup=await get_menu(user_lang,update.effective_user.id)
             )
         else:
             await update.message.reply_text(
@@ -1035,7 +1036,7 @@ async def phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 f"📱 Phone: {escape_markdown_2(phone_number)}\n"
                 f"🌍 Country: {escape_markdown(country_name)}\n"
                 f"⭐ Registration Date: {escape_markdown_2(str(registration_date))}",
-                reply_markup=get_menu(user_lang,update.effective_user.id)
+                reply_markup=await get_menu(user_lang,update.effective_user.id)
             )
         # Show main menu after registration       
     except Exception as e:
@@ -1109,7 +1110,7 @@ async def handle_invalid_contact(update: Update, context: ContextTypes.DEFAULT_T
 #         conn.commit()
 #         await update.message.reply_text(
 #             "✅ Registration complete!",
-#             reply_markup=get_menu(update.effective_user.id)
+#             reply_markup=await get_menu(update.effective_user.id)
 #         )
 #     except Exception as e:
 #         logger.error(f"Database error: {str(e)}")
@@ -1157,7 +1158,7 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Admin panel access control"""
     user = update.effective_user
     user_lang = update.effective_user.language_code or 'en'
-    if not is_admins(user.id):
+    if not await is_admins(user.id):
         await update.message.reply_text("🚫 Access denied!")
         return
     
@@ -1202,7 +1203,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text(msg)
     else:
         msg = " أمر غير معروف يرجى إعادة المحاولة ⚠️" if user_lang.startswith('ar') else "⚠️ An error occurred. Please try again."
-        await update.message.reply_text(msg,reply_markup=get_menu(user_lang,update.effective_user.id))
+        await update.message.reply_text(msg,reply_markup=await get_menu(user_lang,update.effective_user.id))
         
 # ========== ADMIN DELETE CHANNELS ==========
 async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1334,7 +1335,7 @@ AWAIT_CHANNEL_URL_ADMIN, AWAIT_CHANNEL_ADDER_ADMIN = range(2)
 async def delete_channel_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin-only channel deletion flow: prompt for channel URL."""
     user = update.effective_user
-    if not is_admins(user.id):
+    if not await is_admins(user.id):
         await update.message.reply_text("🚫 Access denied!")
         return ConversationHandler.END
 
@@ -1390,7 +1391,7 @@ async def confirm_delete_admin(update: Update, context: ContextTypes.DEFAULT_TYP
 async def unban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
-    if not is_admins(admin.id):
+    if not await is_admins(admin.id):
         await update.message.reply_text("🚫 Access denied!")
         return
 
@@ -1467,7 +1468,7 @@ async def ban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ban a user from using the bot"""
     user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
-    if not is_admins(admin.id):
+    if not await is_admins(admin.id):
         await update.message.reply_text("🚫 Access denied!")
         return
 
@@ -1602,7 +1603,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ban a user from using the bot"""
     user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
-    if not is_admins(admin.id):
+    if not await is_admins(admin.id):
         await update.message.reply_text("🚫 Access denied!")
         return
 
@@ -1671,7 +1672,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
-    if not is_admins(admin.id):
+    if not await is_admins(admin.id):
         await update.message.reply_text("🚫 Access denied!")
         return
 
@@ -1738,21 +1739,27 @@ async def handle_subscription_choice(update: Update, context: ContextTypes.DEFAU
     # Handle cancellation
     if text in ["Cancel ❌", "إلغاء ❌"]:
         cancel_msg = "🚫 Operation cancelled" if user_lang != 'ar' else "🚫 تم الإلغاء"
-        await update.message.reply_text(cancel_msg, reply_markup=get_menu(user_lang, user.id))
+        await update.message.reply_text(cancel_msg, reply_markup=await get_menu(user_lang, user.id))
         return ConversationHandler.END
-
+    conn = get_conn()
     # Validate subscription choice
     if text in ["100 Subscribers", "100 مشترك"]:
         subscription_count = 100
-        price = 6
+        # price = 6
     elif text in ["1000 Subscribers", "1000 مشترك"]:
         subscription_count = 1000
-        price = 60
+        # price = 60
     else:
         error_msg = "❌ Invalid choice. Please select 100 or 1000." if user_lang == 'en' else "❌ اختيار غير صحيح. يرجى اختيار 100 أو 1000"
         await update.message.reply_text(error_msg)
         return SUBSCRIPTION_CHOICE
-
+    try:
+            with conn.cursor() as c:
+                c.execute("SELECT price FROM price WHERE required = %s", (subscription_count,))
+                result_price = c.fetchone()
+                price = result_price[0]
+    finally:
+        put_conn(conn)
     # Store subscription count in context
     context.user_data['subscription_count'] = subscription_count
     context.user_data['price'] = price
@@ -1784,7 +1791,7 @@ async def company_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Handle cancellation
     if text in ["Cancel ❌", "إلغاء ❌"]:
         cancel_msg = "🚫 Operation cancelled" if user_lang != 'ar' else "🚫 تم الإلغاء"
-        await update.message.reply_text(cancel_msg, reply_markup=get_menu(user_lang, user.id))
+        await update.message.reply_text(cancel_msg, reply_markup=await get_menu(user_lang, user.id))
         return ConversationHandler.END
 
     # Validate telecom company
@@ -1850,7 +1857,7 @@ async def company_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         await update.message.reply_text(
             success_msg,
-            reply_markup=get_menu(user_lang, user.id)
+            reply_markup=await get_menu(user_lang, user.id)
         )
 
     except Exception as e:
@@ -1872,7 +1879,7 @@ async def handle_payment_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Handle cancellation
     if payment_id in ["Cancel ❌", "إلغاء ❌"]:
         msg = "🚫 Payment ID update cancelled" if user_lang != 'ar' else "🚫 تم إلغاء تحديث رقم الدفع"
-        await update.message.reply_text(msg, reply_markup=get_menu(user_lang, update.effective_user.id))
+        await update.message.reply_text(msg, reply_markup=await get_menu(user_lang, update.effective_user.id))
         return ConversationHandler.END
     
     if not channel_id_db:
@@ -1911,7 +1918,7 @@ async def handle_payment_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
                        f"🆔 New Payment ID: {payment_id}") if user_lang != 'ar' \
                     else (f"✅ تم تحديث رقم الدفع بنجاح!\n"
                           f"🆔 رقم الدفع الجديد: {payment_id}")
-        await update.message.reply_text(success_msg, reply_markup=get_menu(user_lang, update.effective_user.id))
+        await update.message.reply_text(success_msg, reply_markup=await get_menu(user_lang, update.effective_user.id))
         
     except Exception as e:
         logger.error(f"Payment ID update error: {str(e)}")
