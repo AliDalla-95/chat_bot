@@ -97,7 +97,7 @@ async def is_admins(admins_id: int) -> bool:
         # else:
         #     return False
     except Exception as e:
-        logger.error(f"Ban check failed: {str(e)}")
+        logger.error(f"Admin check failed: {str(e)}")
         return False
     finally:
         conn.close()
@@ -175,34 +175,34 @@ async def handle_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         price = float(update.message.text.strip())
         context.user_data['price'] = price
         
-        conn = get_conn()
         try:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT DISTINCT telecom_company FROM links_success
-                WHERE id_pay = %s
-            """, (context.user_data['id_pay'],))
-            companies = [row[0] for row in cur.fetchall()]
-            cur.execute("""
-                SELECT price FROM links_success
-                WHERE id_pay = %s
-            """, (context.user_data['id_pay'],))
-            price_find = cur.fetchone()[0]
-            keyboard = [[company] for company in companies]
-            keyboard.append(["Cancel ❌"])
-            
-            await update.message.reply_text(
-                "🏢 Select telecom company:",
-                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            )
-            if price == price_find:
-                return AWAIT_COMPANY
-            else:
-                await update.message.reply_text(
-                    "❌ the price is not the real please sure you send the real price",
-                    reply_markup=get_admin_menu()
-                )
-                return ConversationHandler.END
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT DISTINCT telecom_company FROM links_success
+                        WHERE id_pay = %s
+                    """, (context.user_data['id_pay'],))
+                    companies = [row[0] for row in cur.fetchall()]
+                    cur.execute("""
+                        SELECT price FROM links_success
+                        WHERE id_pay = %s
+                    """, (context.user_data['id_pay'],))
+                    price_find = cur.fetchone()[0]
+                    keyboard = [[company] for company in companies]
+                    keyboard.append(["Cancel ❌"])
+                    
+                    await update.message.reply_text(
+                        "🏢 Select telecom company:",
+                        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                    )
+                    if price == price_find:
+                        return AWAIT_COMPANY
+                    else:
+                        await update.message.reply_text(
+                            "❌ the price is not the real please sure you send the real price",
+                            reply_markup=get_admin_menu()
+                        )
+                        return ConversationHandler.END
         finally:
             conn.close()
     except ValueError:
@@ -251,7 +251,7 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
         conn = get_conn()
         try:
             cur = conn.cursor()
-            
+            admin_id = update.effective_user.id  # <-- Fix here
             # Insert to links
             cur.execute("""
                 INSERT INTO links (
@@ -267,7 +267,7 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
                 (admin_id, id_pay, telecom_company, price, action_date)
                 VALUES (%s, %s, %s, %s, %s)
             """, (
-                update.effective_user.id,
+                admin_id,
                 record[9],  # id_pay
                 record[10],  # telecom_company
                 context.user_data['price'],
@@ -279,7 +279,7 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
             
             conn.commit()
             r = record[1:9]
-            print(f"{r}")
+            # print(f"{r}")
             # Notify user with price
             try:
                 await context.bot.send_message(
