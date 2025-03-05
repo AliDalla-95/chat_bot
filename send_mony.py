@@ -37,6 +37,11 @@ def connect_db():
 # Update the start menu
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command with admin menu"""
+    # if isinstance(update, Update):
+    #     message = update.message
+    # else:
+    #     message = update
+    
     user_id = update.effective_user.id
     if user_id in ADMIN_IDS:
         context.user_data.clear()
@@ -124,6 +129,15 @@ async def show_processed_withdrawals(update: Update, context: ContextTypes.DEFAU
 async def show_withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE, page=0):
     """Show paginated withdrawals list with state management"""
     try:
+        # # Delete previous processed message if exists
+        # if 'processed_list_message_id' in context.user_data:
+        #     try:
+        #         await context.bot.delete_message(
+        #             chat_id=update.effective_chat.id,
+        #             message_id=context.user_data['processed_list_message_id']
+        #         )
+        #     except BadRequest:
+        #         pass
         context.user_data.pop('list_message_id', None)
         withdrawals, total_pages = get_withdrawals(page)
         page = max(0, min(page, total_pages - 1)) if total_pages > 0 else 0
@@ -254,17 +268,19 @@ async def mark_as_sent(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=None
         )
 
-        # Refresh withdrawals list
+        # # Refresh withdrawals list
         current_page = context.user_data.get('current_page', 0)
         await show_withdrawals(update, context, page=current_page)
-        # await start(update, context)
+        return VIEWING
+    
     except Exception as e:
         logger.error(f"Processing error: {e}")
         if query.from_user:
             try:
                 await query.edit_message_text("⚠️ Processing failed")
+                return VIEWING
             except BadRequest:
-                pass
+                return VIEWING
 
 async def show_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show withdrawal details"""
