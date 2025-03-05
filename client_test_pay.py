@@ -111,6 +111,29 @@ connection_pool = psycopg2.pool.SimpleConnectionPool(
     **POSTGRES_CONFIG
 )
 
+
+
+
+async def is_admins(admins_id: int) -> bool:
+    """Check if user is banned with DB connection handling"""
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT admins_name FROM admins WHERE admins_id = %s", (admins_id,))
+        return bool(c.fetchone())
+        # result = c.fetchone()
+        # if result:
+        #     return True
+        # else:
+        #     return False
+    except Exception as e:
+        logger.error(f"Ban check failed: {str(e)}")
+        return False
+    finally:
+        conn.close()
+
+
+
 def get_conn():
     return connection_pool.getconn()
 
@@ -184,7 +207,7 @@ async def verify_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 def get_menu(user_lang: str,user_id: int) -> ReplyKeyboardMarkup:
     """Return appropriate menu based on user status"""
-    if str(user_id) == ADMIN_TELEGRAM_ID:
+    if is_admins(user_id):
         return ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True)
     if user_lang == 'ar':
         return ReplyKeyboardMarkup(MAIN_MENU_ar, resize_keyboard=True)
@@ -213,7 +236,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     menu = get_menu(user_lang, user.id)
     # Auto-register admin if not in database
     msg = " أهلا وسهلا  👋" if user_lang.startswith('ar') else "👋 Welcome"
-    if str(user.id) == ADMIN_TELEGRAM_ID and not await is_registered(user.id):
+    if is_admins(user.id) and not await is_registered(user.id):
         conn = get_conn()
         c = conn.cursor()
         c.execute("""
@@ -265,7 +288,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         elif text == "بدء 👋":
             await start(update, context)
         else:
-            await update.message.reply_text("من فضلك اختر أمر من القائمة")
+            msg = "أمر غير معروف. يرجى استخدام أزرار القائمة ❌ "
+            await update.message.reply_text(msg)
+            await show_main_menu(update,context)
     else:
         if text == "📝 Register":
             await handle_registration(update, context)
@@ -286,7 +311,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         elif text == "Start":
             await start(update, context)
         else:
-            await update.message.reply_text("Please use the menu buttons")
+            msg = "❌ Unknown command. Please use the menu buttons."
+            await update.message.reply_text(msg)
+            await show_main_menu(update,user)
 
 async def show_main_menu(update: Update, user):
     """Display the appropriate main menu"""
@@ -1130,7 +1157,7 @@ async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Admin panel access control"""
     user = update.effective_user
     user_lang = update.effective_user.language_code or 'en'
-    if str(user.id) != ADMIN_TELEGRAM_ID:
+    if not is_admins(user.id):
         await update.message.reply_text("🚫 Access denied!")
         return
     
@@ -1307,7 +1334,7 @@ AWAIT_CHANNEL_URL_ADMIN, AWAIT_CHANNEL_ADDER_ADMIN = range(2)
 async def delete_channel_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin-only channel deletion flow: prompt for channel URL."""
     user = update.effective_user
-    if str(user.id) != ADMIN_TELEGRAM_ID:
+    if not is_admins(user.id):
         await update.message.reply_text("🚫 Access denied!")
         return ConversationHandler.END
 
@@ -1363,7 +1390,7 @@ async def confirm_delete_admin(update: Update, context: ContextTypes.DEFAULT_TYP
 async def unban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
-    if str(admin.id) != ADMIN_TELEGRAM_ID:
+    if not is_admins(admin.id):
         await update.message.reply_text("🚫 Access denied!")
         return
 
@@ -1440,7 +1467,7 @@ async def ban_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ban a user from using the bot"""
     user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
-    if str(admin.id) != ADMIN_TELEGRAM_ID:
+    if not is_admins(admin.id):
         await update.message.reply_text("🚫 Access denied!")
         return
 
@@ -1575,7 +1602,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ban a user from using the bot"""
     user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
-    if str(admin.id) != ADMIN_TELEGRAM_ID:
+    if not is_admins(admin.id):
         await update.message.reply_text("🚫 Access denied!")
         return
 
@@ -1644,7 +1671,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = update.effective_user.language_code or 'en'
     admin = update.effective_user
-    if str(admin.id) != ADMIN_TELEGRAM_ID:
+    if not is_admins(admin.id):
         await update.message.reply_text("🚫 Access denied!")
         return
 

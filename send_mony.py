@@ -34,6 +34,25 @@ def connect_db():
     """Create and return a PostgreSQL database connection"""
     return psycopg2.connect(DB_URL)
 
+
+async def is_admins(admins_id: int) -> bool:
+    """Check if user is banned with DB connection handling"""
+    try:
+        with connect_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT admins_name FROM admins WHERE admins_id = %s", (admins_id,))
+            return bool(c.fetchone())
+            # result = c.fetchone()
+            # if result:
+            #     return True
+            # else:
+            #     return False
+    except Exception as e:
+        logger.error(f"Ban check failed: {str(e)}")
+        return False
+    finally:
+        conn.close()
+
 # Update the start menu
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command with admin menu"""
@@ -43,7 +62,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     #     message = update
     
     user_id = update.effective_user.id
-    if user_id in ADMIN_IDS:
+    await is_admins(user_id)
+    if is_admins:
         context.user_data.clear()
         
         menu = ReplyKeyboardMarkup(

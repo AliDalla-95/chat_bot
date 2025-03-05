@@ -81,13 +81,35 @@ ADMIN_MAIN_MENU = [
     ["📊 View Statistics", "🔙 Main Menu"]
 ]
 
+
+
+
+async def is_admins(admins_id: int) -> bool:
+    """Check if user is banned with DB connection handling"""
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT admins_name FROM admins WHERE admins_id = %s", (admins_id,))
+        return bool(c.fetchone())
+        # result = c.fetchone()
+        # if result:
+        #     return True
+        # else:
+        #     return False
+    except Exception as e:
+        logger.error(f"Ban check failed: {str(e)}")
+        return False
+    finally:
+        conn.close()
+
+
 def get_admin_menu():
     return ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True)
 
 # ========== CORE FUNCTIONALITY ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    if str(user.id) in ADMIN_IDS:
+    if await is_admins(user.id):
         await update.message.reply_text(
             "👑 Admin Panel",
             reply_markup=get_admin_menu()
@@ -329,6 +351,30 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ Failed to send message")
     return ConversationHandler.END
 
+async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Process menu button selections"""
+    text = update.message.text
+    user = update.effective_user
+    
+    ["🔍 Process Payment ID", "📨 Send Message"],
+    ["📊 View Statistics", "🔙 Main Menu"]
+    
+
+    if text == "🔍 Process Payment ID":
+        await process_payment_start(update, context)
+    elif text == "📨 Send Message":
+        await send_message_start(update, context)
+    elif text == "📊 View Statistics":
+        await start(update, context)
+    elif text == "🔙 Main Menu":  # New handler
+        await start(update, context)
+    else:
+        msg = "❌ Unknown command. Please use the menu buttons."
+        await update.message.reply_text(msg)
+        await start(update,context)
+
+
+
 async def cancel_operation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Operation cancelled",
@@ -362,6 +408,13 @@ def main():
         ]
     )
 
+
+    handlers = [
+        MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler),
+    ]
+
+    for handler in handlers:
+        application.add_handler(handler)
     # Main handlers
     application.add_handler(CommandHandler('start', start))
     application.add_handler(admin_conv)
