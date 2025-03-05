@@ -938,7 +938,7 @@ def get_user_points(telegram_id: int) -> int:
 
 def deduct_points(telegram_id: int, amount: int) -> None:
     """Deduct points from user's balance"""
-    points_to_deduct = amount * 100
+    points_to_deduct = amount
     try:
         with connect_db() as conn:
             with conn.cursor() as cursor:
@@ -1106,7 +1106,14 @@ async def process_withdrawal_amount(update: Update, context: ContextTypes.DEFAUL
         )
         await update.message.reply_text(error_msg)
         return WITHDRAW_AMOUNT
-
+    
+    if amount < 100:
+        error_msg = (
+            f"❌ (100,200.....)لاتستطيع سحب سوى نقاط من فئة المئات أو أضعافها" if user_lang.startswith('ar')
+            else f"❌ withdrawal is 100 or 200 or...... units"
+        )
+        await update.message.reply_text(error_msg)
+        return WITHDRAW_AMOUNT
     # Store valid amount and proceed to carrier selection
     context.user_data['withdrawal_amount'] = amount
     return await select_carrier(update, context)
@@ -1115,31 +1122,40 @@ async def process_withdrawal_amount(update: Update, context: ContextTypes.DEFAUL
 
 async def select_carrier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Display carrier selection buttons"""
-    user_lang = update.effective_user.language_code or 'en'
-    
-    buttons = [
-        [
-            InlineKeyboardButton("MTN", callback_data="carrier_MTN"),
-            InlineKeyboardButton(
-                "سيرياتيل" if user_lang.startswith('ar') else "SYRIATEL", 
-                callback_data="carrier_SYRIATEL"
-            )
+    try:
+        user_lang = update.effective_user.language_code or 'en'
+        
+        buttons = [
+            [
+                InlineKeyboardButton("MTN", callback_data="carrier_MTN"),
+                InlineKeyboardButton(
+                    "سيرياتيل" if user_lang.startswith('ar') else "SYRIATEL", 
+                    callback_data="carrier_SYRIATEL"
+                )
+            ]
         ]
-    ]
+        
+        prompt_text = (
+            "الرجاء اختيار شركة الاتصالات أو أضغط إلغاء من القائمة لإلغاء العملية:" if user_lang.startswith('ar')
+            else "Please select your mobile carrier or Cancel from the Menu to Cancel the Process:"
+        )
+        # await update.message.reply_text(
+        #     prompt_text,
+        #     reply_markup=ReplyKeyboardMarkup([["Cancel ❌"]], resize_keyboard=True)
+        # )
+        await update.message.reply_text(
+            prompt_text,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return CARRIER_SELECTION
+    except Exception as e:
+        logger.error(f"Error getting full profile: {e}")
+        error_msg = (
+            f"❌حدث خطأ يرجى من المحاولة من جديد " if user_lang.startswith('ar')
+            else f"❌ there is an Error Try again please"
+        )
+        await update.message.reply_text(error_msg)
     
-    prompt_text = (
-        "الرجاء اختيار شركة الاتصالات أو أضغط إلغاء من القائمة لإلغاء العملية:" if user_lang.startswith('ar')
-        else "Please select your mobile carrier or Cancel from the Menu to Cancel the Process:"
-    )
-    # await update.message.reply_text(
-    #     prompt_text,
-    #     reply_markup=ReplyKeyboardMarkup([["Cancel ❌"]], resize_keyboard=True)
-    # )
-    await update.message.reply_text(
-        prompt_text,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-    return CARRIER_SELECTION
 
 async def process_carrier_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_lang = update.effective_user.language_code or 'en'
