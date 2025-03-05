@@ -129,6 +129,12 @@ async def process_payment_start(update: Update, context: ContextTypes.DEFAULT_TY
 # Modified handlers
 async def handle_payment_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     id_pay = update.message.text.strip()
+    user_lang = update.effective_user.language_code or 'en'
+
+    if id_pay in ["Cancel ❌", "إلغاء ❌"]:
+        cancel_msg = "🚫 Operation cancelled" if user_lang != 'ar' else "🚫 تم الإلغاء"
+        await update.message.reply_text(cancel_msg, reply_markup=get_admin_menu())
+        return ConversationHandler.END
     context.user_data['id_pay'] = id_pay
     
     conn = get_conn()
@@ -356,8 +362,8 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     text = update.message.text
     user = update.effective_user
     
-    ["🔍 Process Payment ID", "📨 Send Message"],
-    ["📊 View Statistics", "🔙 Main Menu"]
+    # ["🔍 Process Payment ID", "📨 Send Message"],
+    # ["📊 View Statistics", "🔙 Main Menu"]
     
 
     if text == "🔍 Process Payment ID":
@@ -413,11 +419,12 @@ def main():
         MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler),
     ]
 
-    for handler in handlers:
-        application.add_handler(handler)
+
     # Main handlers
     application.add_handler(CommandHandler('start', start))
     application.add_handler(admin_conv)
+    for handler in handlers:
+        application.add_handler(handler)
 
     application.run_polling()
 
