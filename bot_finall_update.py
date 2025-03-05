@@ -207,6 +207,10 @@ def update_likes(link_id: int, points: int = 1) -> None:
                     "DELETE FROM links WHERE id = %s",
                     (link_id,)
                 )
+                cursor.execute("""
+                UPDATE likes SET status = %s
+                WHERE id = %s
+                """, (True,link_id))
             conn.commit()
 
     except Exception as e:
@@ -545,7 +549,7 @@ def get_profile(telegram_id: int) -> tuple:
 
                 # Get total withdrawals
                 cursor.execute(
-                    "SELECT COALESCE(SUM(amount * 100), 0) FROM withdrawals WHERE user_id = %s",
+                    "SELECT COALESCE(SUM(amount), 0) FROM withdrawals WHERE user_id = %s",
                     (telegram_id,)
                 )
                 total_withdrawals = cursor.fetchone()[0] or 0
@@ -1039,10 +1043,10 @@ async def start_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     msg = "كم عدد المئات التي تريد سحبها؟ (أدخل رقماً)" if user_lang.startswith('ar') else "Enter the number of 100-point units to withdraw:"
     if user_lang.startswith('ar'):
         keyboard = [["إلغاء ❌"]]
-        msg = "كم عدد المئات التي تريد سحبها؟ (أدخل رقماً)"
+        msg = "كم عدد النقاط التي تريد سحبها؟ (أدخل رقماً)"
     else:
         keyboard = [["Cancel ❌"]]
-        msg = "Enter the number of 100-point units to withdraw:"
+        msg = "Enter the number of points units to withdraw:"
         
     await update.message.reply_text(
         msg,
@@ -1084,19 +1088,21 @@ async def process_withdrawal_amount(update: Update, context: ContextTypes.DEFAUL
     # Check available points
     available_points = get_user_points(user_id)
     max_withdrawal_units = available_points // 100
-    
-    if max_withdrawal_units < 1:
+    max_withdrawal_units_allow = max_withdrawal_units * 100
+
+    if max_withdrawal_units_allow < 100:
         error_msg = (
             "⚠️ تحتاج إلى 100 نقطة على الأقل للسحب" if user_lang.startswith('ar')
             else "⚠️ You need at least 100 points to withdraw"
         )
         await update.message.reply_text(error_msg)
+        await show_menu(update, context)
         return ConversationHandler.END
 
-    if amount > max_withdrawal_units:
+    if amount > max_withdrawal_units_allow:
         error_msg = (
-            f"❌ الحد الأقصى للسحب هو {max_withdrawal_units}" if user_lang.startswith('ar')
-            else f"❌ Maximum withdrawal is {max_withdrawal_units} units"
+            f"❌ الحد الأقصى للسحب هو {max_withdrawal_units_allow}" if user_lang.startswith('ar')
+            else f"❌ Maximum withdrawal is {max_withdrawal_units_allow} units"
         )
         await update.message.reply_text(error_msg)
         return WITHDRAW_AMOUNT
@@ -1148,9 +1154,9 @@ async def process_carrier_selection(update: Update, context: ContextTypes.DEFAUL
         deduct_points(user_id, amount)
         create_withdrawal(user_id, amount, carrier)  # Modified function
         
-        msg = (f"✅ تم طلب سحب {amount * 100} نقطة إلى {carrier}"
+        msg = (f"✅ تم طلب سحب {amount} نقطة إلى {carrier}"
                if user_lang.startswith('ar') 
-               else f"✅ Withdrawal request for {amount * 100} points to {carrier} submitted")
+               else f"✅ Withdrawal request for {amount} points to {carrier} submitted")
         
         await query.edit_message_text(msg)
         # Show menu after confirmation

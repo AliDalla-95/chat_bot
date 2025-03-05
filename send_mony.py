@@ -84,7 +84,7 @@ async def show_processed_withdrawals(update: Update, context: ContextTypes.DEFAU
         
         for wd in withdrawals:
             message += (
-                f"✅ #{wd['id']} - {wd['amount'] * 100} pts\n" f"Email: {wd['email']}\n" f"Phone: {wd['phone']}\n"
+                f"✅ #{wd['id']} - {wd['amount']} pts\n" f"Email: {wd['email']}\n" f"Phone: {wd['phone']}\n"
                 f"👤 {wd['full_name']} | 📅 {wd['processed_date'].strftime('%Y-%m-%d')}\n\n"
             )
         
@@ -132,7 +132,7 @@ async def show_withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE, p
         buttons = []
         
         for wd in withdrawals:
-            message += f"🔹 #{wd['id']} - {wd['amount'] * 100} pts - {wd['full_name']}\n"
+            message += f"🔹 #{wd['id']} - {wd['amount']} pts - {wd['full_name']}\n"
             buttons.append([InlineKeyboardButton(
                 f"Detail #{wd['id']}", callback_data=f"detail_{wd['id']}_{page}"
             )])
@@ -216,7 +216,7 @@ async def mark_as_sent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_message = (
             "🎉 Withdrawal Processed!\n"
             f"📆 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-            f"💎 Amount: {withdrawal['amount'] * 100} pts\n"
+            f"💎 Amount: {withdrawal['amount']} pts\n"
             f"👤 Receiver: {withdrawal['full_name']}\n"
             f"📱 Phone: {withdrawal['phone']}"
         )
@@ -241,7 +241,7 @@ async def mark_as_sent(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "────────────────────\n"
             f"👤 Name: {withdrawal['full_name']}\n"
             f"📱 Phone: {withdrawal['phone']}\n"
-            f"💸 Amount: {withdrawal['amount'] * 100} points\n"
+            f"💸 Amount: {withdrawal['amount']} points\n"
             f"📡 Carrier: {withdrawal['carrier']}\n"
             f"📅 Date: {withdrawal['withdrawal_date'].strftime('%Y-%m-%d %H:%M')}\n"
             "────────────────────\n"
@@ -285,7 +285,7 @@ async def show_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "────────────────────\n"
             f"👤 Name: {withdrawal['full_name']}\n"
             f"📱 Phone: {withdrawal['phone']}\n"
-            f"💸 Amount: {withdrawal['amount'] * 100} points\n"
+            f"💸 Amount: {withdrawal['amount']} points\n"
             f"📡 Carrier: {withdrawal['carrier']}\n"
             f"📅 Date: {withdrawal['withdrawal_date'].strftime('%Y-%m-%d %H:%M')}\n"
             "────────────────────\n"
