@@ -424,9 +424,9 @@ async def list_channels_Done(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Get channels with likes count FOR CURRENT USER ONLY
         c.execute("""
             SELECT channel_name, url , channel_id, channel_likes FROM likes
-            WHERE user_id = %s
+            WHERE user_id = %s AND status = %s
             ORDER BY id DESC
-        """, (user.id,))  # Make sure user.id is correctly passed
+        """, (user.id,True,))  # Make sure user.id is correctly passed
         
         channels = c.fetchall()
         conn.close()
