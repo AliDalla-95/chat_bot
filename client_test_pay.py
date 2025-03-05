@@ -79,7 +79,7 @@ MAIN_MENU = [
 ]
 
 MAIN_MENU_ar = [
-    ["التسجيل 📝","بدء 👋"],
+    ["تسجيل الدخول 📝","بدء 👋"],
     ["أدخل رابط القناة للتحقق منه 🔍"],
     ["الملف الشخصي 📋", "قنواتي التي تم إنجازها"],  # Added new menu item
     ["قنواتي التي أدخلتها 📌","قنواتي التي تم قبولها بعد الدفع 📌"],
@@ -269,7 +269,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user = update.effective_user
     user_lang = update.effective_user.language_code or 'en'
     if user_lang.startswith('ar'):
-        if text == "التسجيل 📝":
+        if text == "تسجيل الدخول 📝":
             await handle_registration(update, context)
         elif text == "أدخل رابط القناة للتحقق منه 🔍":
             await handle_channel_verification(update, context)
@@ -1139,7 +1139,7 @@ async def handle_channel_verification(update: Update, context: ContextTypes.DEFA
         result = c.fetchone()
         re = result[0]
         if result[0] < 10:
-            msg = " من فضلك أرسل رابط القناة للتحقق منه والمتابعة 🔗" if user_lang.startswith('ar') else "🔗 Please send your YouTube channel URL:"
+            msg = " من فضلك أدخل رابط القناة للتحقق منه والمتابعة 🔗" if user_lang.startswith('ar') else "🔗 Please Input your YouTube channel URL:"
             await update.message.reply_text(msg)
             return CHANNEL_URL
         else:
@@ -2027,7 +2027,7 @@ def main() -> None:
                 MessageHandler(filters.Regex(r"^🗑 Delete Channel$"), delete_channel),
                 MessageHandler(filters.Regex(r"^Delete Channel accept$"), delete_channel_accept),
                 MessageHandler(filters.Regex(r"^حذف قناة مقبولة$"), delete_channel_accept),
-                MessageHandler(filters.Regex(r"^التسجيل 📝$"), handle_registration),
+                MessageHandler(filters.Regex(r"^تسجيل الدخول 📝$"), handle_registration),
                 MessageHandler(filters.Regex(r"^الملف الشخصي 📋$"), profile_command),
                 MessageHandler(filters.Regex(r"^أدخل رابط القناة للتحقق منه 🔍$"), handle_channel_verification),
                 MessageHandler(filters.Regex(r"^حذف قناة 🗑$"), delete_channel),

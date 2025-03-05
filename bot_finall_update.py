@@ -227,11 +227,11 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if user_lang.startswith('ar'):
             # Arabic menu
             keyboard = [
-                ["بدء 👋", "تسجيل 📝"],
+                ["بدء 👋", "تسجيل الدخول 📝"],
                 ["الملف الشخصي 📋", "عرض المهام 🔍"],
                 ["سحب الأرباح 💵"]  # New Arabic withdrawal button
             ]
-            menu_text = "اختر أمرا من القائمة"
+            menu_text = "اختر أمرا من القائمة أدناه"
         else:
             # English menu (default)
             keyboard = [
@@ -239,7 +239,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 ["📋 Profile", "🔍 View Links"],
                 ["💵 Withdraw"]  # New English withdrawal button
             ]
-            menu_text = "Choose a command:"
+            menu_text = "Choose a command From The Menu Below:"
             
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -601,7 +601,7 @@ async def send_links_page(user_lang: str,chat_id: int, user_id: int, page: int, 
                     f"👤 *بواسطة* {escape_markdown(adder)}\n"
                     f"[🔗 رابط الذهاب للمهمة انقر هنا]({yt_link})"
                     )
-                keyboard = [[InlineKeyboardButton(" تنفيذ المهمة وبعد الانتهاء تحميل الصورة 📸", callback_data=f"submit_{link_id}")]]
+                keyboard = [[InlineKeyboardButton(" تنفيذ المهمة وبعد الانتهاء تحميل لقطة الشاشة لتأكيدها مبدئيا 📸", callback_data=f"submit_{link_id}")]]
             else:
                 text = (
                     f"📛 {escape_markdown(desc)}\n"
@@ -609,7 +609,7 @@ async def send_links_page(user_lang: str,chat_id: int, user_id: int, page: int, 
                     f"👤 *By:* {escape_markdown(adder)}\n"
                     f"[🔗 YouTube Link]({yt_link})"
                 )
-                keyboard = [[InlineKeyboardButton("📸 Submit Image", callback_data=f"submit_{link_id}")]]
+                keyboard = [[InlineKeyboardButton("📸 Accept And  Subscribed And Then Submit Screenshot", callback_data=f"submit_{link_id}")]]
 
             message = await context.bot.send_message(
                 chat_id,
@@ -667,7 +667,7 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
             "🔍 View Links": "view_links",
             # Arabic commands
             "بدء 👋" : "start",
-            "تسجيل 📝": "register",
+            "تسجيل الدخول 📝": "register",
             "الملف الشخصي 📋": "profile",
             "عرض المهام 🔍": "view_links"
         }
@@ -1235,7 +1235,7 @@ def main() -> None:
             CommandHandler('register', register),
             MessageHandler(filters.Regex(r'^📝 Register$'), register),
             MessageHandler(filters.Regex(r'^/register$'), register),
-            MessageHandler(filters.Regex(r'^تسجيل 📝$'), register),
+            MessageHandler(filters.Regex(r'^تسجيل الدخول 📝$'), register),
         ],
         states={
             EMAIL: [

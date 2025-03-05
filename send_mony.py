@@ -93,8 +93,9 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_withdrawals(update, context, page=0)
     elif text in ("🏠 Start", "/start"):
         await start(update, context)
+    else:
+        await start(update, context)
     return VIEWING
-
 
 # Add new function for processed withdrawals
 async def show_processed_withdrawals(update: Update, context: ContextTypes.DEFAULT_TYPE, page=0):
