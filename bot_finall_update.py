@@ -28,7 +28,7 @@ import random
 from email.message import EmailMessage
 import psycopg2
 import ocr_processor
-import scan_image4
+import scan_image5
 import image_processing
 import config
 import phonenumbers
@@ -812,7 +812,7 @@ async def process_image_upload(update: Update, context: ContextTypes.DEFAULT_TYP
 
         verification_passed = False
         try:
-            if scan_image4.check_text_in_image(image_path, description):
+            if scan_image5.check_text_in_image(image_path, description):
                 verification_passed = True
         except Exception as e:
             logger.error(f"Image processing error: {e}")
