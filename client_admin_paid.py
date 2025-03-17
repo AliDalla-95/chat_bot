@@ -225,19 +225,23 @@ async def handle_company(update: Update, context: ContextTypes.DEFAULT_TYPE):
             SELECT * FROM links_success
             WHERE id_pay = %s AND telecom_company = %s
         """, (context.user_data['id_pay'], company))
+        # Get column names from cursor description
+        columns = [desc[0] for desc in cur.description]
         record = cur.fetchone()
         
         if not record:
             await update.message.reply_text("❌ Record not found")
             return ConversationHandler.END
-            
-        context.user_data['record'] = record
+
+        # Create dictionary with column names as keys
+        context.user_data['record'] = dict(zip(columns, record))
+        # context.user_data['record'] = record
         
         await update.message.reply_text(
             f"Confirm processing:\n\n"
-            f"Payment ID: {record[9]}\n"
-            f"Company: {record[10]}\n"
-            f"Channel: {record[2]}\n",
+            f"Payment ID: {record['id_pay']}\n"
+            f"Company: {record['telecom_company']}\n"
+            f"Channel: {record['description']}\n",
             reply_markup=ReplyKeyboardMarkup([["✅ Confirm", "Cancel ❌"]], resize_keyboard=True)
         )
         return AWAIT_CONFIRMATION
@@ -258,7 +262,14 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
                     youtube_link, description, added_by, adder, 
                     submission_date, channel_id, id_pay, subscription_count 
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (record[1],record[2],record[3],record[4],record[5],record[6],record[9],record[8]))
+            """, (record['youtube_link'],
+                  record['description'],
+                  record['added_by'],
+                  record['adder'],
+                  record['submission_date'],
+                  record['channel_id'],
+                  record['id_pay'],
+                  record['subscription_count']))
 
             
             # Insert to admin log with price
@@ -268,29 +279,29 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
                 VALUES (%s, %s, %s, %s, %s)
             """, (
                 admin_id,
-                record[9],  # id_pay
-                record[10],  # telecom_company
+                record['id_pay'], # id_pay
+                record['telecom_company'], # telecom_company
                 context.user_data['price'],
                 datetime.now()
             ))
             
             # Delete from links_success
-            cur.execute("DELETE FROM links_success WHERE id = %s", (record[0],))
+            cur.execute("DELETE FROM links_success WHERE id = %s", (record['id'],))
             
             conn.commit()
-            r = record[1:9]
+            # r = record[1:9]
             # print(f"{r}")
             # Notify user with price
             try:
                 await context.bot.send_message(
-                    chat_id=record[3],
+                    chat_id=record['added_by'],
                     text=f"✅ Payment processed!\n"
-                         f"📋 Details:\n"
-                         f"ID: {record[9]}\n"
-                         f"Company: {record[10]}\n"
-                         f"channel: {record[1]}\n"
-                         f"required: {record[8]}\n"
-                         f"Price: {context.user_data['price']}"
+                        f"📋 Details:\n"
+                        f"ID: {record['id_pay']}\n"
+                        f"Company: {record['telecom_company']}\n"
+                        f"Channel: {record['description']}\n"
+                        f"Required: {record['subscription_count']}\n"
+                        f"Price: {context.user_data['price']}"
                 )
             except Exception as e:
                 logger.error(f"User notification failed: {str(e)}")
